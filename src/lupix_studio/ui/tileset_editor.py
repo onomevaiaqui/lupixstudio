@@ -9,21 +9,35 @@ from PySide6.QtWidgets import (
     QGraphicsView,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
 from lupix_studio.assets.registry import AssetRecord
-from lupix_studio.tileset.model import TileSetResource
-from lupix_studio.tileset.serializer import TileSetSerializer
+from lupix_studio.tileset.model import (
+    TilePattern,
+    TileSetResource,
+)
+from lupix_studio.tileset.serializer import (
+    TileSetSerializer,
+)
 
 
 class TileSetCanvas(QGraphicsView):
-    """Canvas pixel-perfect para TileSets."""
+    """Canvas de seleção simples e múltipla."""
 
-    tile_selected = Signal(int, int, int)
+    selection_changed = Signal(
+        int,
+        int,
+        int,
+        int,
+    )
 
     def __init__(self) -> None:
         super().__init__()
@@ -36,9 +50,12 @@ class TileSetCanvas(QGraphicsView):
         self.tile_width = 16
         self.tile_height = 16
 
-        self.selected_column: int | None = None
-        self.selected_row: int | None = None
-        self.selected_index: int | None = None
+        self.start_column: int | None = None
+        self.start_row: int | None = None
+        self.end_column: int | None = None
+        self.end_row: int | None = None
+
+        self.dragging = False
 
         self.setBackgroundBrush(
             QColor("#151619")
@@ -79,13 +96,6 @@ class TileSetCanvas(QGraphicsView):
 
         self.clear_selection()
 
-    def clear_selection(self) -> None:
-        self.selected_column = None
-        self.selected_row = None
-        self.selected_index = None
-
-        self.viewport().update()
-
     def set_grid_size(
         self,
         tile_width: int,
@@ -108,10 +118,43 @@ class TileSetCanvas(QGraphicsView):
         factor: float,
     ) -> None:
         self.resetTransform()
-
         self.scale(
             factor,
             factor,
+        )
+
+    def clear_selection(
+        self,
+    ) -> None:
+        self.start_column = None
+        self.start_row = None
+        self.end_column = None
+        self.end_row = None
+        self.viewport().update()
+
+    def _cell_at(
+        self,
+        scene_pos: QPointF,
+    ) -> tuple[int, int] | None:
+        if self.pixmap_item is None:
+            return None
+
+        pixmap = self.pixmap_item.pixmap()
+
+        x = scene_pos.x()
+        y = scene_pos.y()
+
+        if (
+            x < 0
+            or y < 0
+            or x >= pixmap.width()
+            or y >= pixmap.height()
+        ):
+            return None
+
+        return (
+            int(x // self.tile_width),
+            int(y // self.tile_height),
         )
 
     def mousePressEvent(
@@ -126,64 +169,139 @@ class TileSetCanvas(QGraphicsView):
                 event.position().toPoint()
             )
 
-            self._select_tile_at(
+            cell = self._cell_at(
                 scene_pos
             )
+
+            if cell is not None:
+                self.start_column = cell[0]
+                self.start_row = cell[1]
+                self.end_column = cell[0]
+                self.end_row = cell[1]
+
+                self.dragging = True
+
+                self._emit_selection()
+                self.viewport().update()
 
         super().mousePressEvent(
             event
         )
 
-    def _select_tile_at(
+    def mouseMoveEvent(
         self,
-        scene_pos: QPointF,
+        event: QMouseEvent,
     ) -> None:
-        if self.pixmap_item is None:
-            return
+        if self.dragging:
+            scene_pos = self.mapToScene(
+                event.position().toPoint()
+            )
 
-        pixmap = self.pixmap_item.pixmap()
+            cell = self._cell_at(
+                scene_pos
+            )
 
-        x = scene_pos.x()
-        y = scene_pos.y()
+            if cell is not None:
+                self.end_column = cell[0]
+                self.end_row = cell[1]
 
+                self._emit_selection()
+                self.viewport().update()
+
+        super().mouseMoveEvent(
+            event
+        )
+
+    def mouseReleaseEvent(
+        self,
+        event: QMouseEvent,
+    ) -> None:
         if (
-            x < 0
-            or y < 0
-            or x >= pixmap.width()
-            or y >= pixmap.height()
+            event.button()
+            == Qt.MouseButton.LeftButton
         ):
+            self.dragging = False
+
+        super().mouseReleaseEvent(
+            event
+        )
+
+    def _emit_selection(
+        self,
+    ) -> None:
+        selection = self.selection_rect_cells()
+
+        if selection is None:
             return
 
-        column = int(
-            x // self.tile_width
-        )
+        column, row, width, height = selection
 
-        row = int(
-            y // self.tile_height
-        )
-
-        columns = max(
-            1,
-            pixmap.width()
-            // self.tile_width,
-        )
-
-        tile_index = (
-            row * columns
-            + column
-        )
-
-        self.selected_column = column
-        self.selected_row = row
-        self.selected_index = tile_index
-
-        self.viewport().update()
-
-        self.tile_selected.emit(
+        self.selection_changed.emit(
             column,
             row,
-            tile_index,
+            width,
+            height,
         )
+
+    def selection_rect_cells(
+        self,
+    ) -> tuple[int, int, int, int] | None:
+        if (
+            self.start_column is None
+            or self.start_row is None
+            or self.end_column is None
+            or self.end_row is None
+        ):
+            return None
+
+        left = min(
+            self.start_column,
+            self.end_column,
+        )
+
+        right = max(
+            self.start_column,
+            self.end_column,
+        )
+
+        top = min(
+            self.start_row,
+            self.end_row,
+        )
+
+        bottom = max(
+            self.start_row,
+            self.end_row,
+        )
+
+        return (
+            left,
+            top,
+            right - left + 1,
+            bottom - top + 1,
+        )
+
+    def select_pattern(
+        self,
+        pattern: TilePattern,
+    ) -> None:
+        self.start_column = pattern.column
+        self.start_row = pattern.row
+
+        self.end_column = (
+            pattern.column
+            + pattern.width
+            - 1
+        )
+
+        self.end_row = (
+            pattern.row
+            + pattern.height
+            - 1
+        )
+
+        self._emit_selection()
+        self.viewport().update()
 
     def drawForeground(
         self,
@@ -240,11 +358,12 @@ class TileSetCanvas(QGraphicsView):
 
             y += self.tile_height
 
-        if (
-            self.selected_column is None
-            or self.selected_row is None
-        ):
+        selection = self.selection_rect_cells()
+
+        if selection is None:
             return
+
+        column, row, selection_width, selection_height = selection
 
         selection_pen = QPen(
             QColor(
@@ -265,20 +384,16 @@ class TileSetCanvas(QGraphicsView):
 
         painter.drawRect(
             QRectF(
-                self.selected_column
-                * self.tile_width,
-                self.selected_row
-                * self.tile_height,
-                self.tile_width,
-                self.tile_height,
+                column * self.tile_width,
+                row * self.tile_height,
+                selection_width * self.tile_width,
+                selection_height * self.tile_height,
             )
         )
 
 
 class TileSetEditor(QWidget):
-    """Editor de TileSets persistentes."""
-
-    tile_selected = Signal(int, int, int)
+    """Editor de TileSets com padrões reutilizáveis."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -294,13 +409,8 @@ class TileSetEditor(QWidget):
             "Nenhum TileSet aberto"
         )
 
-        self.path_label = QLabel(
-            "-"
-        )
-
-        self.path_label.setWordWrap(
-            True
-        )
+        self.path_label = QLabel("-")
+        self.path_label.setWordWrap(True)
 
         self.tile_width_spin = QSpinBox()
         self.tile_width_spin.setRange(
@@ -344,9 +454,24 @@ class TileSetEditor(QWidget):
             "Salvar TileSet"
         )
 
-        self.column_value = QLabel("-")
-        self.row_value = QLabel("-")
-        self.index_value = QLabel("-")
+        self.selection_value = QLabel(
+            "-"
+        )
+
+        self.pattern_name = QLineEdit()
+        self.pattern_name.setPlaceholderText(
+            "Nome do padrão"
+        )
+
+        self.add_pattern_button = QPushButton(
+            "Adicionar padrão"
+        )
+
+        self.remove_pattern_button = QPushButton(
+            "Remover padrão"
+        )
+
+        self.pattern_list = QListWidget()
 
         self.canvas = TileSetCanvas()
 
@@ -368,9 +493,7 @@ class TileSetEditor(QWidget):
             self.tile_height_spin
         )
 
-        controls.addSpacing(
-            20
-        )
+        controls.addSpacing(20)
 
         controls.addWidget(
             QLabel("Zoom:")
@@ -380,9 +503,7 @@ class TileSetEditor(QWidget):
             self.zoom_combo
         )
 
-        controls.addSpacing(
-            20
-        )
+        controls.addSpacing(20)
 
         controls.addWidget(
             self.save_button
@@ -393,40 +514,72 @@ class TileSetEditor(QWidget):
         selection_info = QHBoxLayout()
 
         selection_info.addWidget(
-            QLabel("Coluna:")
+            QLabel("Seleção:")
         )
 
         selection_info.addWidget(
-            self.column_value
-        )
-
-        selection_info.addSpacing(
-            12
-        )
-
-        selection_info.addWidget(
-            QLabel("Linha:")
-        )
-
-        selection_info.addWidget(
-            self.row_value
-        )
-
-        selection_info.addSpacing(
-            12
-        )
-
-        selection_info.addWidget(
-            QLabel("Tile ID:")
-        )
-
-        selection_info.addWidget(
-            self.index_value
+            self.selection_value
         )
 
         selection_info.addStretch()
 
-        layout = QVBoxLayout(self)
+        pattern_controls = QHBoxLayout()
+
+        pattern_controls.addWidget(
+            self.pattern_name
+        )
+
+        pattern_controls.addWidget(
+            self.add_pattern_button
+        )
+
+        pattern_controls.addWidget(
+            self.remove_pattern_button
+        )
+
+        right_panel = QWidget()
+
+        right_layout = QVBoxLayout(
+            right_panel
+        )
+
+        right_layout.addWidget(
+            QLabel("Tile Palette")
+        )
+
+        right_layout.addLayout(
+            pattern_controls
+        )
+
+        right_layout.addWidget(
+            self.pattern_list
+        )
+
+        splitter = QSplitter(
+            Qt.Orientation.Horizontal
+        )
+
+        splitter.addWidget(
+            self.canvas
+        )
+
+        splitter.addWidget(
+            right_panel
+        )
+
+        splitter.setStretchFactor(
+            0,
+            4,
+        )
+
+        splitter.setStretchFactor(
+            1,
+            1,
+        )
+
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.addWidget(
             self.title
@@ -445,7 +598,7 @@ class TileSetEditor(QWidget):
         )
 
         layout.addWidget(
-            self.canvas
+            splitter
         )
 
         self.tile_width_spin.valueChanged.connect(
@@ -464,8 +617,20 @@ class TileSetEditor(QWidget):
             self.save_resource
         )
 
-        self.canvas.tile_selected.connect(
-            self._on_tile_selected
+        self.canvas.selection_changed.connect(
+            self._on_selection_changed
+        )
+
+        self.add_pattern_button.clicked.connect(
+            self._add_pattern
+        )
+
+        self.remove_pattern_button.clicked.connect(
+            self._remove_pattern
+        )
+
+        self.pattern_list.itemClicked.connect(
+            self._on_pattern_clicked
         )
 
         self._update_grid()
@@ -542,6 +707,7 @@ class TileSetEditor(QWidget):
 
         self._update_grid()
         self._update_zoom()
+        self._refresh_patterns()
 
     def save_resource(
         self,
@@ -573,9 +739,9 @@ class TileSetEditor(QWidget):
             self.tile_height_spin.value(),
         )
 
-        self.column_value.setText("-")
-        self.row_value.setText("-")
-        self.index_value.setText("-")
+        self.selection_value.setText(
+            "-"
+        )
 
     def _update_zoom(
         self,
@@ -588,26 +754,123 @@ class TileSetEditor(QWidget):
             factor
         )
 
-    def _on_tile_selected(
+    def _on_selection_changed(
         self,
         column: int,
         row: int,
-        tile_index: int,
+        width: int,
+        height: int,
     ) -> None:
-        self.column_value.setText(
-            str(column)
+        self.selection_value.setText(
+            f"col {column}, lin {row}, "
+            f"{width} × {height}"
         )
 
-        self.row_value.setText(
-            str(row)
+    def _add_pattern(
+        self,
+    ) -> None:
+        if self.resource is None:
+            return
+
+        selection = (
+            self.canvas.selection_rect_cells()
         )
 
-        self.index_value.setText(
-            str(tile_index)
+        if selection is None:
+            return
+
+        column, row, width, height = selection
+
+        name = (
+            self.pattern_name.text().strip()
         )
 
-        self.tile_selected.emit(
-            column,
-            row,
-            tile_index,
+        if not name:
+            name = (
+                f"Pattern {len(self.resource.patterns) + 1}"
+            )
+
+        pattern = TilePattern(
+            name=name,
+            column=column,
+            row=row,
+            width=width,
+            height=height,
+        )
+
+        self.resource.patterns.append(
+            pattern
+        )
+
+        self.pattern_name.clear()
+
+        self._refresh_patterns()
+        self.save_resource()
+
+    def _remove_pattern(
+        self,
+    ) -> None:
+        if self.resource is None:
+            return
+
+        row = self.pattern_list.currentRow()
+
+        if row < 0:
+            return
+
+        if row >= len(
+            self.resource.patterns
+        ):
+            return
+
+        del self.resource.patterns[
+            row
+        ]
+
+        self._refresh_patterns()
+        self.save_resource()
+
+    def _refresh_patterns(
+        self,
+    ) -> None:
+        self.pattern_list.clear()
+
+        if self.resource is None:
+            return
+
+        for pattern in self.resource.patterns:
+            item = QListWidgetItem(
+                f"{pattern.name} "
+                f"({pattern.width}x{pattern.height})"
+            )
+
+            self.pattern_list.addItem(
+                item
+            )
+
+    def _on_pattern_clicked(
+        self,
+        item: QListWidgetItem,
+    ) -> None:
+        if self.resource is None:
+            return
+
+        row = self.pattern_list.row(
+            item
+        )
+
+        if (
+            row < 0
+            or row >= len(
+                self.resource.patterns
+            )
+        ):
+            return
+
+        pattern = self.resource.patterns[
+            row
+        ]
+
+        self.canvas.select_pattern(
+            pattern
         )
