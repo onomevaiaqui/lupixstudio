@@ -20,24 +20,13 @@ from PySide6.QtWidgets import (
 )
 
 from lupix_studio.assets.registry import AssetRecord
-from lupix_studio.tileset.model import (
-    TilePattern,
-    TileSetResource,
-)
-from lupix_studio.tileset.serializer import (
-    TileSetSerializer,
-)
+from lupix_studio.tileset.model import TilePattern, TileSetResource
+from lupix_studio.tileset.serializer import TileSetSerializer
+from lupix_studio.tileset.validator import validate_tileset
 
 
 class TileSetCanvas(QGraphicsView):
-    """Canvas de seleção simples e múltipla."""
-
-    selection_changed = Signal(
-        int,
-        int,
-        int,
-        int,
-    )
+    selection_changed = Signal(int, int, int, int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -130,6 +119,7 @@ class TileSetCanvas(QGraphicsView):
         self.start_row = None
         self.end_column = None
         self.end_row = None
+
         self.viewport().update()
 
     def _cell_at(
@@ -165,12 +155,10 @@ class TileSetCanvas(QGraphicsView):
             event.button()
             == Qt.MouseButton.LeftButton
         ):
-            scene_pos = self.mapToScene(
-                event.position().toPoint()
-            )
-
             cell = self._cell_at(
-                scene_pos
+                self.mapToScene(
+                    event.position().toPoint()
+                )
             )
 
             if cell is not None:
@@ -178,7 +166,6 @@ class TileSetCanvas(QGraphicsView):
                 self.start_row = cell[1]
                 self.end_column = cell[0]
                 self.end_row = cell[1]
-
                 self.dragging = True
 
                 self._emit_selection()
@@ -193,12 +180,10 @@ class TileSetCanvas(QGraphicsView):
         event: QMouseEvent,
     ) -> None:
         if self.dragging:
-            scene_pos = self.mapToScene(
-                event.position().toPoint()
-            )
-
             cell = self._cell_at(
-                scene_pos
+                self.mapToScene(
+                    event.position().toPoint()
+                )
             )
 
             if cell is not None:
@@ -224,23 +209,6 @@ class TileSetCanvas(QGraphicsView):
 
         super().mouseReleaseEvent(
             event
-        )
-
-    def _emit_selection(
-        self,
-    ) -> None:
-        selection = self.selection_rect_cells()
-
-        if selection is None:
-            return
-
-        column, row, width, height = selection
-
-        self.selection_changed.emit(
-            column,
-            row,
-            width,
-            height,
         )
 
     def selection_rect_cells(
@@ -303,6 +271,18 @@ class TileSetCanvas(QGraphicsView):
         self._emit_selection()
         self.viewport().update()
 
+    def _emit_selection(
+        self,
+    ) -> None:
+        selection = self.selection_rect_cells()
+
+        if selection is None:
+            return
+
+        self.selection_changed.emit(
+            *selection
+        )
+
     def drawForeground(
         self,
         painter: QPainter,
@@ -318,9 +298,6 @@ class TileSetCanvas(QGraphicsView):
 
         pixmap = self.pixmap_item.pixmap()
 
-        width = pixmap.width()
-        height = pixmap.height()
-
         grid_pen = QPen(
             QColor(
                 255,
@@ -330,30 +307,31 @@ class TileSetCanvas(QGraphicsView):
             )
         )
 
-        grid_pen.setCosmetic(
-            True
-        )
-
-        painter.setPen(
-            grid_pen
-        )
+        grid_pen.setCosmetic(True)
+        painter.setPen(grid_pen)
 
         x = 0
 
-        while x <= width:
+        while x <= pixmap.width():
             painter.drawLine(
                 QPointF(x, 0),
-                QPointF(x, height),
+                QPointF(
+                    x,
+                    pixmap.height(),
+                ),
             )
 
             x += self.tile_width
 
         y = 0
 
-        while y <= height:
+        while y <= pixmap.height():
             painter.drawLine(
                 QPointF(0, y),
-                QPointF(width, y),
+                QPointF(
+                    pixmap.width(),
+                    y,
+                ),
             )
 
             y += self.tile_height
@@ -363,9 +341,9 @@ class TileSetCanvas(QGraphicsView):
         if selection is None:
             return
 
-        column, row, selection_width, selection_height = selection
+        column, row, width, height = selection
 
-        selection_pen = QPen(
+        pen = QPen(
             QColor(
                 255,
                 210,
@@ -374,27 +352,20 @@ class TileSetCanvas(QGraphicsView):
             2,
         )
 
-        selection_pen.setCosmetic(
-            True
-        )
-
-        painter.setPen(
-            selection_pen
-        )
+        pen.setCosmetic(True)
+        painter.setPen(pen)
 
         painter.drawRect(
             QRectF(
                 column * self.tile_width,
                 row * self.tile_height,
-                selection_width * self.tile_width,
-                selection_height * self.tile_height,
+                width * self.tile_width,
+                height * self.tile_height,
             )
         )
 
 
 class TileSetEditor(QWidget):
-    """Editor de TileSets com padrões reutilizáveis."""
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -411,6 +382,10 @@ class TileSetEditor(QWidget):
 
         self.path_label = QLabel("-")
         self.path_label.setWordWrap(True)
+
+        self.validation_label = QLabel(
+            "Validação: -"
+        )
 
         self.tile_width_spin = QSpinBox()
         self.tile_width_spin.setRange(
@@ -454,9 +429,7 @@ class TileSetEditor(QWidget):
             "Salvar TileSet"
         )
 
-        self.selection_value = QLabel(
-            "-"
-        )
+        self.selection_value = QLabel("-")
 
         self.pattern_name = QLineEdit()
         self.pattern_name.setPlaceholderText(
@@ -589,6 +562,10 @@ class TileSetEditor(QWidget):
             self.path_label
         )
 
+        layout.addWidget(
+            self.validation_label
+        )
+
         layout.addLayout(
             controls
         )
@@ -665,8 +642,6 @@ class TileSetEditor(QWidget):
                 name=asset_record.name,
                 asset_id=asset_record.id,
                 texture=asset_record.path,
-                tile_width=16,
-                tile_height=16,
             )
 
         self.title.setText(
@@ -708,6 +683,7 @@ class TileSetEditor(QWidget):
         self._update_grid()
         self._update_zoom()
         self._refresh_patterns()
+        self._refresh_validation()
 
     def save_resource(
         self,
@@ -731,6 +707,8 @@ class TileSetEditor(QWidget):
             self.resource_path,
         )
 
+        self._refresh_validation()
+
     def _update_grid(
         self,
     ) -> None:
@@ -739,9 +717,18 @@ class TileSetEditor(QWidget):
             self.tile_height_spin.value(),
         )
 
-        self.selection_value.setText(
-            "-"
-        )
+        self.selection_value.setText("-")
+
+        if self.resource is not None:
+            self.resource.tile_width = (
+                self.tile_width_spin.value()
+            )
+
+            self.resource.tile_height = (
+                self.tile_height_spin.value()
+            )
+
+            self._refresh_validation()
 
     def _update_zoom(
         self,
@@ -781,25 +768,21 @@ class TileSetEditor(QWidget):
 
         column, row, width, height = selection
 
-        name = (
-            self.pattern_name.text().strip()
-        )
+        name = self.pattern_name.text().strip()
 
         if not name:
             name = (
                 f"Pattern {len(self.resource.patterns) + 1}"
             )
 
-        pattern = TilePattern(
-            name=name,
-            column=column,
-            row=row,
-            width=width,
-            height=height,
-        )
-
         self.resource.patterns.append(
-            pattern
+            TilePattern(
+                name=name,
+                column=column,
+                row=row,
+                width=width,
+                height=height,
+            )
         )
 
         self.pattern_name.clear()
@@ -815,11 +798,11 @@ class TileSetEditor(QWidget):
 
         row = self.pattern_list.currentRow()
 
-        if row < 0:
-            return
-
-        if row >= len(
-            self.resource.patterns
+        if (
+            row < 0
+            or row >= len(
+                self.resource.patterns
+            )
         ):
             return
 
@@ -839,13 +822,11 @@ class TileSetEditor(QWidget):
             return
 
         for pattern in self.resource.patterns:
-            item = QListWidgetItem(
-                f"{pattern.name} "
-                f"({pattern.width}x{pattern.height})"
-            )
-
             self.pattern_list.addItem(
-                item
+                QListWidgetItem(
+                    f"{pattern.name} "
+                    f"({pattern.width}x{pattern.height})"
+                )
             )
 
     def _on_pattern_clicked(
@@ -867,10 +848,54 @@ class TileSetEditor(QWidget):
         ):
             return
 
-        pattern = self.resource.patterns[
-            row
+        self.canvas.select_pattern(
+            self.resource.patterns[
+                row
+            ]
+        )
+
+    def _refresh_validation(
+        self,
+    ) -> None:
+        if (
+            self.resource is None
+            or self.project_root is None
+        ):
+            self.validation_label.setText(
+                "Validação: -"
+            )
+            return
+
+        issues = validate_tileset(
+            self.resource,
+            self.project_root,
+        )
+
+        errors = [
+            issue
+            for issue in issues
+            if issue.level == "error"
         ]
 
-        self.canvas.select_pattern(
-            pattern
+        warnings = [
+            issue
+            for issue in issues
+            if issue.level == "warning"
+        ]
+
+        if errors:
+            self.validation_label.setText(
+                f"Validação: {len(errors)} erro(s), "
+                f"{len(warnings)} aviso(s)"
+            )
+            return
+
+        if warnings:
+            self.validation_label.setText(
+                f"Validação: {len(warnings)} aviso(s)"
+            )
+            return
+
+        self.validation_label.setText(
+            "Validação: OK"
         )
