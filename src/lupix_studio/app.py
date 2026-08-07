@@ -1,0 +1,28 @@
+import sys
+
+from PySide6.QtWidgets import QApplication
+
+from lupix_studio.ui.main_window import MainWindow
+
+
+def create_application() -> QApplication:
+    """Cria ou retorna a aplicação Qt."""
+    app = QApplication.instance()
+
+    if app is None:
+        app = QApplication(sys.argv)
+
+    app.setApplicationName("Lupix Studio")
+    app.setOrganizationName("Lupix")
+
+    return app
+
+
+def main() -> int:
+    """Ponto de entrada do Lupix Studio."""
+    app = create_application()
+
+    window = MainWindow()
+    window.show()
+
+    return app.exec()

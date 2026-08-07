@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Ambiente virtual
+.venv/
+
+# Testes
+.pytest_cache/
+.ruff_cache/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# VS Code
+.vscode/
+
+# Sistema
+Thumbs.db
+.DS_Store
+
+# Lupix
+.cache/
+temp/
+logs/
+exports/

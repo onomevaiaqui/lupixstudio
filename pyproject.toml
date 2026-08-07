@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lupix-studio"
+version = "0.1.0"
+description = "IDE para desenvolvimento de jogos para o console Lupi"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "PySide6>=6.8,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<10",
+    "ruff>=0.9,<1",
+]
+
+[project.scripts]
+lupix-studio = "lupix_studio.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
