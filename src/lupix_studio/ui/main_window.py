@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QTextEdit,
+    QTreeWidgetItem,
 )
 
 from lupix_studio.assets.importer import import_png
@@ -17,6 +18,8 @@ from lupix_studio.assets.registry import AssetRegistry
 from lupix_studio.project.creator import create_project
 from lupix_studio.project.loader import LoadedProject, load_project
 from lupix_studio.project.validator import validate_project
+from lupix_studio.scene.creator import create_scene
+from lupix_studio.scene.serializer import SceneSerializer
 from lupix_studio.settings.recent_projects import RecentProjectsManager
 from lupix_studio.ui.asset_browser import AssetBrowser
 from lupix_studio.ui.asset_inspector import (
@@ -25,6 +28,7 @@ from lupix_studio.ui.asset_inspector import (
 )
 from lupix_studio.ui.asset_preview_dialog import AssetPreviewDialog
 from lupix_studio.ui.new_project_dialog import NewProjectDialog
+from lupix_studio.ui.new_scene_dialog import NewSceneDialog
 from lupix_studio.ui.project_tree import ProjectTree
 from lupix_studio.ui.workspace import WorkspaceWidget
 
@@ -36,7 +40,10 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.current_project: LoadedProject | None = None
+        self.current_scene_path: Path | None = None
+
         self.recent_projects = RecentProjectsManager()
+        self.scene_serializer = SceneSerializer()
 
         self.setWindowTitle(
             "Lupix Studio"
@@ -67,6 +74,10 @@ class MainWindow(QMainWindow):
 
         project_menu = self.menuBar().addMenu(
             "Projeto"
+        )
+
+        scene_menu = self.menuBar().addMenu(
+            "Cena"
         )
 
         assets_menu = self.menuBar().addMenu(
@@ -111,6 +122,15 @@ class MainWindow(QMainWindow):
 
         validate_action.triggered.connect(
             self._validate_current_project
+        )
+
+        new_scene_action = QAction(
+            "Nova Cena",
+            self,
+        )
+
+        new_scene_action.triggered.connect(
+            self._on_new_scene
         )
 
         import_sprite_action = QAction(
@@ -183,6 +203,10 @@ class MainWindow(QMainWindow):
             )
         )
 
+        scene_menu.addAction(
+            new_scene_action
+        )
+
         assets_menu.addAction(
             import_sprite_action
         )
@@ -224,6 +248,10 @@ class MainWindow(QMainWindow):
         )
 
         self.project_tree = ProjectTree()
+
+        self.project_tree.itemDoubleClicked.connect(
+            self._on_project_item_double_clicked
+        )
 
         self.project_dock.setWidget(
             self.project_tree
@@ -432,6 +460,7 @@ class MainWindow(QMainWindow):
         project: LoadedProject,
     ) -> None:
         self.current_project = project
+        self.current_scene_path = None
 
         self.recent_projects.add(
             project.root
@@ -466,6 +495,147 @@ class MainWindow(QMainWindow):
         )
 
         self._validate_current_project()
+
+    def _on_new_scene(self) -> None:
+        if self.current_project is None:
+            QMessageBox.warning(
+                self,
+                "Nova Cena",
+                "Abra um projeto primeiro.",
+            )
+            return
+
+        dialog = NewSceneDialog(
+            self,
+            default_width=self.current_project.width,
+            default_height=self.current_project.height,
+        )
+
+        if not dialog.exec():
+            return
+
+        name = dialog.scene_name()
+
+        if not name:
+            QMessageBox.warning(
+                self,
+                "Nova Cena",
+                "Informe um nome para a cena.",
+            )
+            return
+
+        try:
+            path = create_scene(
+                project_root=self.current_project.root,
+                name=name,
+                width=dialog.scene_width(),
+                height=dialog.scene_height(),
+            )
+
+            resource = self.scene_serializer.load(
+                path
+            )
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
+            QMessageBox.critical(
+                self,
+                "Erro ao criar cena",
+                str(error),
+            )
+            return
+
+        self.project_tree.load_project(
+            self.current_project.root
+        )
+
+        self._open_scene(
+            path,
+            resource,
+        )
+
+    def _open_scene(
+        self,
+        path: Path,
+        resource,
+    ) -> None:
+        self.current_scene_path = path.resolve()
+
+        self.workspace.show_scene(
+            self.current_scene_path,
+            resource,
+        )
+
+        self.statusBar().showMessage(
+            f"Cena aberta: {resource.name}"
+        )
+
+        self.console.append(
+            f"Cena aberta: {self.current_scene_path}"
+        )
+
+        if self.current_project is not None:
+            self.setWindowTitle(
+                f"{resource.name} - "
+                f"{self.current_project.name} - "
+                f"Lupix Studio"
+            )
+
+    def _on_project_item_double_clicked(
+        self,
+        item: QTreeWidgetItem,
+        column: int,
+    ) -> None:
+        del column
+
+        value = item.data(
+            0,
+            Qt.ItemDataRole.UserRole,
+        )
+
+        if not value:
+            return
+
+        path = Path(
+            str(value)
+        )
+
+        if not path.is_file():
+            return
+
+        if path.suffix.lower() == ".scene":
+            self._open_scene_file(
+                path
+            )
+
+    def _open_scene_file(
+        self,
+        path: Path,
+    ) -> None:
+        try:
+            resource = self.scene_serializer.load(
+                path
+            )
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
+            QMessageBox.critical(
+                self,
+                "Erro ao abrir cena",
+                str(error),
+            )
+            return
+
+        self._open_scene(
+            path,
+            resource,
+        )
 
     def _import_png(
         self,
