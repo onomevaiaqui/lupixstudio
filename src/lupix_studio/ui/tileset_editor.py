@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QGraphicsPixmapItem,
@@ -16,7 +16,9 @@ from PySide6.QtWidgets import (
 
 
 class TileSetCanvas(QGraphicsView):
-    """Canvas pixel-perfect para visualização de TileSets."""
+    """Canvas pixel-perfect para visualização e seleção de TileSets."""
+
+    tile_selected = Signal(int, int, int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -30,7 +32,13 @@ class TileSetCanvas(QGraphicsView):
         self.tile_height = 16
         self.zoom_factor = 1.0
 
-        self.setBackgroundBrush(QColor("#151619"))
+        self.selected_column: int | None = None
+        self.selected_row: int | None = None
+        self.selected_index: int | None = None
+
+        self.setBackgroundBrush(
+            QColor("#151619")
+        )
 
         self.setRenderHint(
             QPainter.RenderHint.SmoothPixmapTransform,
@@ -45,20 +53,33 @@ class TileSetCanvas(QGraphicsView):
             QGraphicsView.ViewportAnchor.AnchorViewCenter
         )
 
-    def load_image(self, path: Path) -> None:
+    def load_image(
+        self,
+        path: Path,
+    ) -> None:
         self.scene.clear()
 
-        pixmap = QPixmap(str(path))
+        pixmap = QPixmap(
+            str(path)
+        )
 
         if pixmap.isNull():
             self.pixmap_item = None
             return
 
-        self.pixmap_item = self.scene.addPixmap(pixmap)
+        self.pixmap_item = self.scene.addPixmap(
+            pixmap
+        )
 
         self.scene.setSceneRect(
-            QRectF(pixmap.rect())
+            QRectF(
+                pixmap.rect()
+            )
         )
+
+        self.selected_column = None
+        self.selected_row = None
+        self.selected_index = None
 
         self.resetTransform()
         self.zoom_factor = 1.0
@@ -70,15 +91,106 @@ class TileSetCanvas(QGraphicsView):
         tile_width: int,
         tile_height: int,
     ) -> None:
-        self.tile_width = max(1, tile_width)
-        self.tile_height = max(1, tile_height)
+        self.tile_width = max(
+            1,
+            tile_width,
+        )
+
+        self.tile_height = max(
+            1,
+            tile_height,
+        )
+
+        self.selected_column = None
+        self.selected_row = None
+        self.selected_index = None
+
         self.viewport().update()
 
-    def set_zoom(self, factor: float) -> None:
+    def set_zoom(
+        self,
+        factor: float,
+    ) -> None:
         self.zoom_factor = factor
 
         self.resetTransform()
-        self.scale(factor, factor)
+        self.scale(
+            factor,
+            factor,
+        )
+
+        self.viewport().update()
+
+    def mousePressEvent(
+        self,
+        event: QMouseEvent,
+    ) -> None:
+        if (
+            event.button()
+            == Qt.MouseButton.LeftButton
+        ):
+            scene_pos = self.mapToScene(
+                event.position().toPoint()
+            )
+
+            self._select_tile_at(
+                scene_pos
+            )
+
+        super().mousePressEvent(
+            event
+        )
+
+    def _select_tile_at(
+        self,
+        scene_pos: QPointF,
+    ) -> None:
+        if self.pixmap_item is None:
+            return
+
+        pixmap = self.pixmap_item.pixmap()
+
+        x = scene_pos.x()
+        y = scene_pos.y()
+
+        if (
+            x < 0
+            or y < 0
+            or x >= pixmap.width()
+            or y >= pixmap.height()
+        ):
+            return
+
+        column = int(
+            x // self.tile_width
+        )
+
+        row = int(
+            y // self.tile_height
+        )
+
+        columns = max(
+            1,
+            pixmap.width()
+            // self.tile_width,
+        )
+
+        tile_index = (
+            row * columns
+            + column
+        )
+
+        self.selected_column = column
+        self.selected_row = row
+        self.selected_index = tile_index
+
+        self.viewport().update()
+
+        self.tile_selected.emit(
+            column,
+            row,
+            tile_index,
+        )
 
     def drawForeground(
         self,
@@ -98,20 +210,35 @@ class TileSetCanvas(QGraphicsView):
         width = pixmap.width()
         height = pixmap.height()
 
-        pen = QPen(
-            QColor(255, 255, 255, 80)
+        grid_pen = QPen(
+            QColor(
+                255,
+                255,
+                255,
+                80,
+            )
         )
 
-        pen.setCosmetic(True)
+        grid_pen.setCosmetic(
+            True
+        )
 
-        painter.setPen(pen)
+        painter.setPen(
+            grid_pen
+        )
 
         x = 0
 
         while x <= width:
             painter.drawLine(
-                QPointF(x, 0),
-                QPointF(x, height),
+                QPointF(
+                    x,
+                    0,
+                ),
+                QPointF(
+                    x,
+                    height,
+                ),
             )
 
             x += self.tile_width
@@ -120,15 +247,67 @@ class TileSetCanvas(QGraphicsView):
 
         while y <= height:
             painter.drawLine(
-                QPointF(0, y),
-                QPointF(width, y),
+                QPointF(
+                    0,
+                    y,
+                ),
+                QPointF(
+                    width,
+                    y,
+                ),
             )
 
             y += self.tile_height
 
+        self._draw_selection(
+            painter
+        )
+
+    def _draw_selection(
+        self,
+        painter: QPainter,
+    ) -> None:
+        if (
+            self.selected_column is None
+            or self.selected_row is None
+        ):
+            return
+
+        selection_pen = QPen(
+            QColor(
+                255,
+                210,
+                60,
+            ),
+            2,
+        )
+
+        selection_pen.setCosmetic(
+            True
+        )
+
+        painter.setPen(
+            selection_pen
+        )
+
+        selection_rect = QRectF(
+            self.selected_column
+            * self.tile_width,
+            self.selected_row
+            * self.tile_height,
+            self.tile_width,
+            self.tile_height,
+        )
+
+        painter.drawRect(
+            selection_rect
+        )
+
 
 class TileSetEditor(QWidget):
-    """Editor inicial de TileSets."""
+    """Editor de TileSets."""
+
+    tile_selected = Signal(int, int, int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -139,22 +318,35 @@ class TileSetEditor(QWidget):
             "Nenhum TileSet aberto"
         )
 
-        self.path_label = QLabel("-")
-        self.path_label.setWordWrap(True)
+        self.path_label = QLabel(
+            "-"
+        )
+
+        self.path_label.setWordWrap(
+            True
+        )
 
         self.tile_width_spin = QSpinBox()
+
         self.tile_width_spin.setRange(
             1,
             512,
         )
-        self.tile_width_spin.setValue(16)
+
+        self.tile_width_spin.setValue(
+            16
+        )
 
         self.tile_height_spin = QSpinBox()
+
         self.tile_height_spin.setRange(
             1,
             512,
         )
-        self.tile_height_spin.setValue(16)
+
+        self.tile_height_spin.setValue(
+            16
+        )
 
         self.zoom_combo = QComboBox()
 
@@ -174,6 +366,18 @@ class TileSetEditor(QWidget):
 
         self.zoom_combo.setCurrentText(
             "400%"
+        )
+
+        self.column_value = QLabel(
+            "-"
+        )
+
+        self.row_value = QLabel(
+            "-"
+        )
+
+        self.index_value = QLabel(
+            "-"
         )
 
         self.canvas = TileSetCanvas()
@@ -196,7 +400,9 @@ class TileSetEditor(QWidget):
             self.tile_height_spin
         )
 
-        controls.addSpacing(20)
+        controls.addSpacing(
+            20
+        )
 
         controls.addWidget(
             QLabel("Zoom:")
@@ -208,7 +414,45 @@ class TileSetEditor(QWidget):
 
         controls.addStretch()
 
-        layout = QVBoxLayout(self)
+        selection_info = QHBoxLayout()
+
+        selection_info.addWidget(
+            QLabel("Coluna:")
+        )
+
+        selection_info.addWidget(
+            self.column_value
+        )
+
+        selection_info.addSpacing(
+            12
+        )
+
+        selection_info.addWidget(
+            QLabel("Linha:")
+        )
+
+        selection_info.addWidget(
+            self.row_value
+        )
+
+        selection_info.addSpacing(
+            12
+        )
+
+        selection_info.addWidget(
+            QLabel("Tile ID:")
+        )
+
+        selection_info.addWidget(
+            self.index_value
+        )
+
+        selection_info.addStretch()
+
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.addWidget(
             self.title
@@ -220,6 +464,10 @@ class TileSetEditor(QWidget):
 
         layout.addLayout(
             controls
+        )
+
+        layout.addLayout(
+            selection_info
         )
 
         layout.addWidget(
@@ -236,6 +484,10 @@ class TileSetEditor(QWidget):
 
         self.zoom_combo.currentIndexChanged.connect(
             self._update_zoom
+        )
+
+        self.canvas.tile_selected.connect(
+            self._on_tile_selected
         )
 
         self._update_grid()
@@ -255,6 +507,18 @@ class TileSetEditor(QWidget):
             str(self.current_path)
         )
 
+        self.column_value.setText(
+            "-"
+        )
+
+        self.row_value.setText(
+            "-"
+        )
+
+        self.index_value.setText(
+            "-"
+        )
+
         self.canvas.load_image(
             self.current_path
         )
@@ -262,17 +526,57 @@ class TileSetEditor(QWidget):
         self._update_grid()
         self._update_zoom()
 
-    def _update_grid(self) -> None:
+    def _update_grid(
+        self,
+    ) -> None:
         self.canvas.set_grid_size(
             self.tile_width_spin.value(),
             self.tile_height_spin.value(),
         )
 
-    def _update_zoom(self) -> None:
+        self.column_value.setText(
+            "-"
+        )
+
+        self.row_value.setText(
+            "-"
+        )
+
+        self.index_value.setText(
+            "-"
+        )
+
+    def _update_zoom(
+        self,
+    ) -> None:
         factor = float(
             self.zoom_combo.currentData()
         )
 
         self.canvas.set_zoom(
             factor
+        )
+
+    def _on_tile_selected(
+        self,
+        column: int,
+        row: int,
+        tile_index: int,
+    ) -> None:
+        self.column_value.setText(
+            str(column)
+        )
+
+        self.row_value.setText(
+            str(row)
+        )
+
+        self.index_value.setText(
+            str(tile_index)
+        )
+
+        self.tile_selected.emit(
+            column,
+            row,
+            tile_index,
         )
