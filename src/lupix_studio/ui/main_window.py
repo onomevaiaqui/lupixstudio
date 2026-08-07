@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from lupix_studio.project.creator import create_project
 from lupix_studio.project.loader import LoadedProject, load_project
+from lupix_studio.project.validator import validate_project
 from lupix_studio.settings.recent_projects import RecentProjectsManager
 from lupix_studio.ui.new_project_dialog import NewProjectDialog
 from lupix_studio.ui.project_tree import ProjectTree
@@ -59,6 +60,11 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Sair", self)
         exit_action.triggered.connect(self.close)
 
+        validate_action = QAction("Validar Projeto", self)
+        validate_action.triggered.connect(
+            self._validate_current_project
+        )
+
         file_menu.addAction(new_action)
         file_menu.addAction(open_action)
         file_menu.addSeparator()
@@ -67,6 +73,8 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(QAction("Desfazer", self))
         edit_menu.addAction(QAction("Refazer", self))
 
+        project_menu.addAction(validate_action)
+        project_menu.addSeparator()
         project_menu.addAction(QAction("Executar", self))
         project_menu.addAction(QAction("Exportar", self))
 
@@ -259,6 +267,46 @@ class MainWindow(QMainWindow):
 
         self.console.append(
             f"Projeto aberto: {project.root}"
+        )
+
+        self._validate_current_project()
+
+    def _validate_current_project(self) -> None:
+        self.problems.clear()
+
+        if self.current_project is None:
+            self.problems.append(
+                "Nenhum projeto aberto."
+            )
+            return
+
+        issues = validate_project(
+            self.current_project
+        )
+
+        if not issues:
+            self.problems.append(
+                "Projeto válido para desenvolvimento Lupi."
+            )
+
+            self.statusBar().showMessage(
+                "Projeto válido"
+            )
+            return
+
+        for issue in issues:
+            prefix = (
+                "ERRO"
+                if issue.level == "error"
+                else "AVISO"
+            )
+
+            self.problems.append(
+                f"[{prefix}] {issue.message}"
+            )
+
+        self.statusBar().showMessage(
+            f"Validação concluída: {len(issues)} ocorrência(s)"
         )
 
     def _refresh_recent_projects(self) -> None:

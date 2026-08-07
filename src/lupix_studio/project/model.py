@@ -16,6 +16,8 @@ class ProjectConfig:
     development_mode: DevelopmentMode = DevelopmentMode.BLUEPRINT
     width: int = 480
     height: int = 270
+    platform: str = "lupi"
+    entry_point: str = "game.lua"
 
     @property
     def project_dir(self) -> Path:
