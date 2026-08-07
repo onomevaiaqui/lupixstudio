@@ -15,10 +15,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lupix_studio.assets.importer import import_png
 from lupix_studio.project.creator import create_project
 from lupix_studio.project.loader import LoadedProject, load_project
 from lupix_studio.project.validator import validate_project
 from lupix_studio.settings.recent_projects import RecentProjectsManager
+from lupix_studio.ui.asset_browser import AssetBrowser
+from lupix_studio.ui.asset_preview_dialog import AssetPreviewDialog
 from lupix_studio.ui.new_project_dialog import NewProjectDialog
 from lupix_studio.ui.project_tree import ProjectTree
 from lupix_studio.ui.workspace import WorkspaceWidget
@@ -49,20 +52,46 @@ class MainWindow(QMainWindow):
         file_menu = self.menuBar().addMenu("Arquivo")
         edit_menu = self.menuBar().addMenu("Editar")
         project_menu = self.menuBar().addMenu("Projeto")
+        assets_menu = self.menuBar().addMenu("Assets")
         help_menu = self.menuBar().addMenu("Ajuda")
 
         new_action = QAction("Novo Projeto", self)
-        new_action.triggered.connect(self._on_new_project)
+        new_action.triggered.connect(
+            self._on_new_project
+        )
 
         open_action = QAction("Abrir Projeto", self)
-        open_action.triggered.connect(self._on_open_project)
+        open_action.triggered.connect(
+            self._on_open_project
+        )
 
         exit_action = QAction("Sair", self)
-        exit_action.triggered.connect(self.close)
+        exit_action.triggered.connect(
+            self.close
+        )
 
-        validate_action = QAction("Validar Projeto", self)
+        validate_action = QAction(
+            "Validar Projeto",
+            self,
+        )
         validate_action.triggered.connect(
             self._validate_current_project
+        )
+
+        import_sprite_action = QAction(
+            "Importar PNG como Sprite",
+            self,
+        )
+        import_sprite_action.triggered.connect(
+            lambda: self._import_png("sprites")
+        )
+
+        import_tileset_action = QAction(
+            "Importar PNG como TileSet",
+            self,
+        )
+        import_tileset_action.triggered.connect(
+            lambda: self._import_png("tilesets")
         )
 
         file_menu.addAction(new_action)
@@ -70,15 +99,34 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(exit_action)
 
-        edit_menu.addAction(QAction("Desfazer", self))
-        edit_menu.addAction(QAction("Refazer", self))
+        edit_menu.addAction(
+            QAction("Desfazer", self)
+        )
+        edit_menu.addAction(
+            QAction("Refazer", self)
+        )
 
-        project_menu.addAction(validate_action)
+        project_menu.addAction(
+            validate_action
+        )
         project_menu.addSeparator()
-        project_menu.addAction(QAction("Executar", self))
-        project_menu.addAction(QAction("Exportar", self))
+        project_menu.addAction(
+            QAction("Executar", self)
+        )
+        project_menu.addAction(
+            QAction("Exportar", self)
+        )
 
-        help_menu.addAction(QAction("Sobre", self))
+        assets_menu.addAction(
+            import_sprite_action
+        )
+        assets_menu.addAction(
+            import_tileset_action
+        )
+
+        help_menu.addAction(
+            QAction("Sobre", self)
+        )
 
     def _create_workspace(self) -> None:
         self.workspace = WorkspaceWidget()
@@ -95,19 +143,21 @@ class MainWindow(QMainWindow):
             self._on_recent_project
         )
 
-        self.setCentralWidget(self.workspace)
+        self.setCentralWidget(
+            self.workspace
+        )
 
     def _create_project_dock(self) -> None:
-        self.project_dock = QDockWidget("Projeto", self)
-
-        self.project_dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea
-            | Qt.DockWidgetArea.RightDockWidgetArea
+        self.project_dock = QDockWidget(
+            "Projeto",
+            self,
         )
 
         self.project_tree = ProjectTree()
 
-        self.project_dock.setWidget(self.project_tree)
+        self.project_dock.setWidget(
+            self.project_tree
+        )
 
         self.addDockWidget(
             Qt.DockWidgetArea.LeftDockWidgetArea,
@@ -115,11 +165,9 @@ class MainWindow(QMainWindow):
         )
 
     def _create_inspector_dock(self) -> None:
-        dock = QDockWidget("Inspector", self)
-
-        dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea
-            | Qt.DockWidgetArea.RightDockWidgetArea
+        dock = QDockWidget(
+            "Inspector",
+            self,
         )
 
         container = QWidget()
@@ -133,7 +181,9 @@ class MainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignTop
         )
 
-        layout.addWidget(self.inspector_title)
+        layout.addWidget(
+            self.inspector_title
+        )
         layout.addStretch()
 
         dock.setMinimumWidth(260)
@@ -145,7 +195,10 @@ class MainWindow(QMainWindow):
         )
 
     def _create_bottom_dock(self) -> None:
-        dock = QDockWidget("Saída", self)
+        dock = QDockWidget(
+            "Saída",
+            self,
+        )
 
         tabs = QTabWidget()
 
@@ -158,11 +211,27 @@ class MainWindow(QMainWindow):
         self.problems = QTextEdit()
         self.problems.setReadOnly(True)
 
-        tabs.addTab(self.console, "Console")
-        tabs.addTab(self.problems, "Problemas")
+        self.asset_browser = AssetBrowser()
+
+        self.asset_browser.asset_activated.connect(
+            self._show_asset_preview
+        )
+
+        tabs.addTab(
+            self.console,
+            "Console",
+        )
+        tabs.addTab(
+            self.problems,
+            "Problemas",
+        )
+        tabs.addTab(
+            self.asset_browser,
+            "Assets",
+        )
 
         dock.setWidget(tabs)
-        dock.setMinimumHeight(160)
+        dock.setMinimumHeight(180)
 
         self.addDockWidget(
             Qt.DockWidgetArea.BottomDockWidgetArea,
@@ -192,8 +261,14 @@ class MainWindow(QMainWindow):
 
         try:
             create_project(config)
-            project = load_project(config.project_dir)
-        except (OSError, ValueError, TypeError) as error:
+            project = load_project(
+                config.project_dir
+            )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
             QMessageBox.critical(
                 self,
                 "Erro ao criar projeto",
@@ -214,8 +289,14 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            project = load_project(Path(directory))
-        except (OSError, ValueError, TypeError) as error:
+            project = load_project(
+                Path(directory)
+            )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
             QMessageBox.critical(
                 self,
                 "Erro ao abrir projeto",
@@ -225,10 +306,17 @@ class MainWindow(QMainWindow):
 
         self._open_project(project)
 
-    def _on_recent_project(self, path: Path) -> None:
+    def _on_recent_project(
+        self,
+        path: Path,
+    ) -> None:
         try:
             project = load_project(path)
-        except (OSError, ValueError, TypeError) as error:
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
             QMessageBox.critical(
                 self,
                 "Erro ao abrir projeto",
@@ -246,10 +334,17 @@ class MainWindow(QMainWindow):
     ) -> None:
         self.current_project = project
 
-        self.recent_projects.add(project.root)
+        self.recent_projects.add(
+            project.root
+        )
+
         self._refresh_recent_projects()
 
         self.project_tree.load_project(
+            project.root
+        )
+
+        self.asset_browser.load_project(
             project.root
         )
 
@@ -270,6 +365,74 @@ class MainWindow(QMainWindow):
         )
 
         self._validate_current_project()
+
+    def _import_png(
+        self,
+        asset_type: str,
+    ) -> None:
+        if self.current_project is None:
+            QMessageBox.warning(
+                self,
+                "Importar Asset",
+                "Abra um projeto primeiro.",
+            )
+            return
+
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importar PNG",
+            str(Path.home()),
+            "PNG (*.png)",
+        )
+
+        if not filename:
+            return
+
+        try:
+            imported = import_png(
+                Path(filename),
+                self.current_project.root,
+                asset_type,
+            )
+        except (
+            OSError,
+            ValueError,
+        ) as error:
+            QMessageBox.critical(
+                self,
+                "Erro ao importar",
+                str(error),
+            )
+            return
+
+        self.project_tree.load_project(
+            self.current_project.root
+        )
+
+        self.asset_browser.refresh()
+
+        self.console.append(
+            f"Asset importado: "
+            f"{imported.destination}"
+        )
+
+        for issue in imported.issues:
+            prefix = (
+                "ERRO"
+                if issue.level == "error"
+                else "AVISO"
+            )
+
+            self.problems.append(
+                f"[{prefix}] "
+                f"{imported.destination.name}: "
+                f"{issue.message}"
+            )
+
+        self.statusBar().showMessage(
+            f"Asset importado: "
+            f"{imported.destination.name}"
+        )
 
     def _validate_current_project(self) -> None:
         self.problems.clear()
@@ -305,13 +468,20 @@ class MainWindow(QMainWindow):
                 f"[{prefix}] {issue.message}"
             )
 
-        self.statusBar().showMessage(
-            f"Validação concluída: {len(issues)} ocorrência(s)"
-        )
-
     def _refresh_recent_projects(self) -> None:
         projects = self.recent_projects.load()
 
         self.workspace.start_page.set_recent_projects(
             projects
         )
+
+
+    def _show_asset_preview(
+        self,
+        path: Path,
+    ) -> None:
+        dialog = AssetPreviewDialog(
+            path,
+            self,
+        )
+        dialog.exec()
