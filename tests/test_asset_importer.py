@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtGui import QImage
 
 from lupix_studio.assets.importer import import_png
+from lupix_studio.assets.registry import AssetRegistry
 
 
 def test_import_png(
@@ -16,11 +17,18 @@ def test_import_png(
         QImage.Format.Format_ARGB32,
     )
 
-    image.fill(0xFFFFFFFF)
+    image.fill(
+        0xFFFFFFFF
+    )
 
-    assert image.save(str(source))
+    assert image.save(
+        str(source)
+    )
 
-    project = tmp_path / "project"
+    project = (
+        tmp_path
+        / "project"
+    )
 
     result = import_png(
         source,
@@ -30,10 +38,21 @@ def test_import_png(
 
     assert result.destination.exists()
 
-    assert (
-        result.destination
-        == project
+    assert result.destination == (
+        project
         / "assets"
         / "sprites"
         / "source.png"
     )
+
+    assert result.record.id
+    assert result.record.type == "sprites"
+
+    registry = AssetRegistry(
+        project
+    )
+
+    records = registry.load()
+
+    assert len(records) == 1
+    assert records[0].id == result.record.id
