@@ -1,7 +1,10 @@
+import logging
 import sys
 
 from PySide6.QtWidgets import QApplication
 
+from lupix_studio.core.logging import configure_logging
+from lupix_studio.settings.manager import SettingsManager
 from lupix_studio.ui.main_window import MainWindow
 
 
@@ -20,9 +23,22 @@ def create_application() -> QApplication:
 
 def main() -> int:
     """Ponto de entrada do Lupix Studio."""
+    configure_logging()
+    logger = logging.getLogger("lupix_studio")
+
+    settings = SettingsManager().load()
+
+    logger.info("Lupix Studio iniciando")
+    logger.info("Tema: %s", settings.theme)
+    logger.info("Idioma: %s", settings.language)
+
     app = create_application()
 
     window = MainWindow()
     window.show()
 
-    return app.exec()
+    exit_code = app.exec()
+
+    logger.info("Lupix Studio encerrado")
+
+    return exit_code
