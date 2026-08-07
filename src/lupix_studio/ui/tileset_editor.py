@@ -9,14 +9,19 @@ from PySide6.QtWidgets import (
     QGraphicsView,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from lupix_studio.assets.registry import AssetRecord
+from lupix_studio.tileset.model import TileSetResource
+from lupix_studio.tileset.serializer import TileSetSerializer
+
 
 class TileSetCanvas(QGraphicsView):
-    """Canvas pixel-perfect para visualização e seleção de TileSets."""
+    """Canvas pixel-perfect para TileSets."""
 
     tile_selected = Signal(int, int, int)
 
@@ -30,7 +35,6 @@ class TileSetCanvas(QGraphicsView):
 
         self.tile_width = 16
         self.tile_height = 16
-        self.zoom_factor = 1.0
 
         self.selected_column: int | None = None
         self.selected_row: int | None = None
@@ -47,10 +51,6 @@ class TileSetCanvas(QGraphicsView):
 
         self.setTransformationAnchor(
             QGraphicsView.ViewportAnchor.AnchorUnderMouse
-        )
-
-        self.setResizeAnchor(
-            QGraphicsView.ViewportAnchor.AnchorViewCenter
         )
 
     def load_image(
@@ -77,12 +77,12 @@ class TileSetCanvas(QGraphicsView):
             )
         )
 
+        self.clear_selection()
+
+    def clear_selection(self) -> None:
         self.selected_column = None
         self.selected_row = None
         self.selected_index = None
-
-        self.resetTransform()
-        self.zoom_factor = 1.0
 
         self.viewport().update()
 
@@ -101,25 +101,18 @@ class TileSetCanvas(QGraphicsView):
             tile_height,
         )
 
-        self.selected_column = None
-        self.selected_row = None
-        self.selected_index = None
-
-        self.viewport().update()
+        self.clear_selection()
 
     def set_zoom(
         self,
         factor: float,
     ) -> None:
-        self.zoom_factor = factor
-
         self.resetTransform()
+
         self.scale(
             factor,
             factor,
         )
-
-        self.viewport().update()
 
     def mousePressEvent(
         self,
@@ -231,14 +224,8 @@ class TileSetCanvas(QGraphicsView):
 
         while x <= width:
             painter.drawLine(
-                QPointF(
-                    x,
-                    0,
-                ),
-                QPointF(
-                    x,
-                    height,
-                ),
+                QPointF(x, 0),
+                QPointF(x, height),
             )
 
             x += self.tile_width
@@ -247,26 +234,12 @@ class TileSetCanvas(QGraphicsView):
 
         while y <= height:
             painter.drawLine(
-                QPointF(
-                    0,
-                    y,
-                ),
-                QPointF(
-                    width,
-                    y,
-                ),
+                QPointF(0, y),
+                QPointF(width, y),
             )
 
             y += self.tile_height
 
-        self._draw_selection(
-            painter
-        )
-
-    def _draw_selection(
-        self,
-        painter: QPainter,
-    ) -> None:
         if (
             self.selected_column is None
             or self.selected_row is None
@@ -290,29 +263,32 @@ class TileSetCanvas(QGraphicsView):
             selection_pen
         )
 
-        selection_rect = QRectF(
-            self.selected_column
-            * self.tile_width,
-            self.selected_row
-            * self.tile_height,
-            self.tile_width,
-            self.tile_height,
-        )
-
         painter.drawRect(
-            selection_rect
+            QRectF(
+                self.selected_column
+                * self.tile_width,
+                self.selected_row
+                * self.tile_height,
+                self.tile_width,
+                self.tile_height,
+            )
         )
 
 
 class TileSetEditor(QWidget):
-    """Editor de TileSets."""
+    """Editor de TileSets persistentes."""
 
     tile_selected = Signal(int, int, int)
 
     def __init__(self) -> None:
         super().__init__()
 
-        self.current_path: Path | None = None
+        self.project_root: Path | None = None
+        self.asset_record: AssetRecord | None = None
+        self.resource_path: Path | None = None
+        self.resource: TileSetResource | None = None
+
+        self.serializer = TileSetSerializer()
 
         self.title = QLabel(
             "Nenhum TileSet aberto"
@@ -327,23 +303,19 @@ class TileSetEditor(QWidget):
         )
 
         self.tile_width_spin = QSpinBox()
-
         self.tile_width_spin.setRange(
             1,
             512,
         )
-
         self.tile_width_spin.setValue(
             16
         )
 
         self.tile_height_spin = QSpinBox()
-
         self.tile_height_spin.setRange(
             1,
             512,
         )
-
         self.tile_height_spin.setValue(
             16
         )
@@ -368,17 +340,13 @@ class TileSetEditor(QWidget):
             "400%"
         )
 
-        self.column_value = QLabel(
-            "-"
+        self.save_button = QPushButton(
+            "Salvar TileSet"
         )
 
-        self.row_value = QLabel(
-            "-"
-        )
-
-        self.index_value = QLabel(
-            "-"
-        )
+        self.column_value = QLabel("-")
+        self.row_value = QLabel("-")
+        self.index_value = QLabel("-")
 
         self.canvas = TileSetCanvas()
 
@@ -410,6 +378,14 @@ class TileSetEditor(QWidget):
 
         controls.addWidget(
             self.zoom_combo
+        )
+
+        controls.addSpacing(
+            20
+        )
+
+        controls.addWidget(
+            self.save_button
         )
 
         controls.addStretch()
@@ -450,9 +426,7 @@ class TileSetEditor(QWidget):
 
         selection_info.addStretch()
 
-        layout = QVBoxLayout(
-            self
-        )
+        layout = QVBoxLayout(self)
 
         layout.addWidget(
             self.title
@@ -486,6 +460,10 @@ class TileSetEditor(QWidget):
             self._update_zoom
         )
 
+        self.save_button.clicked.connect(
+            self.save_resource
+        )
+
         self.canvas.tile_selected.connect(
             self._on_tile_selected
         )
@@ -495,36 +473,97 @@ class TileSetEditor(QWidget):
 
     def open_tileset(
         self,
-        path: Path,
+        project_root: Path,
+        asset_record: AssetRecord,
     ) -> None:
-        self.current_path = path.resolve()
+        self.project_root = project_root.resolve()
+        self.asset_record = asset_record
+
+        texture_path = (
+            self.project_root
+            / asset_record.path
+        )
+
+        self.resource_path = (
+            self.project_root
+            / "lupix"
+            / "tilesets"
+            / f"{asset_record.id}.tileset"
+        )
+
+        if self.resource_path.exists():
+            self.resource = self.serializer.load(
+                self.resource_path
+            )
+        else:
+            self.resource = TileSetResource(
+                name=asset_record.name,
+                asset_id=asset_record.id,
+                texture=asset_record.path,
+                tile_width=16,
+                tile_height=16,
+            )
 
         self.title.setText(
-            self.current_path.name
+            self.resource.name
         )
 
         self.path_label.setText(
-            str(self.current_path)
+            self.resource.texture
         )
 
-        self.column_value.setText(
-            "-"
+        self.tile_width_spin.blockSignals(
+            True
         )
 
-        self.row_value.setText(
-            "-"
+        self.tile_height_spin.blockSignals(
+            True
         )
 
-        self.index_value.setText(
-            "-"
+        self.tile_width_spin.setValue(
+            self.resource.tile_width
+        )
+
+        self.tile_height_spin.setValue(
+            self.resource.tile_height
+        )
+
+        self.tile_width_spin.blockSignals(
+            False
+        )
+
+        self.tile_height_spin.blockSignals(
+            False
         )
 
         self.canvas.load_image(
-            self.current_path
+            texture_path
         )
 
         self._update_grid()
         self._update_zoom()
+
+    def save_resource(
+        self,
+    ) -> None:
+        if (
+            self.resource is None
+            or self.resource_path is None
+        ):
+            return
+
+        self.resource.tile_width = (
+            self.tile_width_spin.value()
+        )
+
+        self.resource.tile_height = (
+            self.tile_height_spin.value()
+        )
+
+        self.serializer.save(
+            self.resource,
+            self.resource_path,
+        )
 
     def _update_grid(
         self,
@@ -534,17 +573,9 @@ class TileSetEditor(QWidget):
             self.tile_height_spin.value(),
         )
 
-        self.column_value.setText(
-            "-"
-        )
-
-        self.row_value.setText(
-            "-"
-        )
-
-        self.index_value.setText(
-            "-"
-        )
+        self.column_value.setText("-")
+        self.row_value.setText("-")
+        self.index_value.setText("-")
 
     def _update_zoom(
         self,

@@ -574,7 +574,8 @@ class MainWindow(QMainWindow):
 
         if record.type == "tilesets":
             self.workspace.show_tileset(
-                path
+                self.current_project.root,
+                record,
             )
 
             self.statusBar().showMessage(
