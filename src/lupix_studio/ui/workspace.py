@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QLabel,
@@ -7,30 +9,52 @@ from PySide6.QtWidgets import (
 )
 
 from lupix_studio.ui.start_page import StartPage
+from lupix_studio.ui.tileset_editor import TileSetEditor
 
 
 class ProjectPage(QWidget):
-    """Área principal exibida quando um projeto está aberto."""
+    """Área principal de um projeto aberto."""
 
     def __init__(self) -> None:
         super().__init__()
 
         self.title = QLabel("Projeto")
-        self.title.setObjectName("ViewportTitle")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title.setObjectName(
+            "ViewportTitle"
+        )
 
-        self.subtitle = QLabel("Nenhuma cena aberta")
-        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        self.subtitle = QLabel(
+            "Nenhuma cena aberta"
+        )
+
+        self.subtitle.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
 
         layout = QVBoxLayout(self)
+
         layout.addStretch()
-        layout.addWidget(self.title)
-        layout.addWidget(self.subtitle)
+        layout.addWidget(
+            self.title
+        )
+        layout.addWidget(
+            self.subtitle
+        )
         layout.addStretch()
 
-    def set_project_name(self, name: str) -> None:
+    def set_project_name(
+        self,
+        name: str,
+    ) -> None:
         self.title.setText(name)
-        self.subtitle.setText("Nenhuma cena aberta")
+
+        self.subtitle.setText(
+            "Nenhuma cena aberta"
+        )
 
 
 class WorkspaceWidget(QWidget):
@@ -43,19 +67,60 @@ class WorkspaceWidget(QWidget):
 
         self.start_page = StartPage()
         self.project_page = ProjectPage()
+        self.tileset_editor = TileSetEditor()
 
-        self.stack.addWidget(self.start_page)
-        self.stack.addWidget(self.project_page)
+        self.stack.addWidget(
+            self.start_page
+        )
+
+        self.stack.addWidget(
+            self.project_page
+        )
+
+        self.stack.addWidget(
+            self.tileset_editor
+        )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.stack)
+
+        layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        layout.addWidget(
+            self.stack
+        )
 
         self.show_start_page()
 
     def show_start_page(self) -> None:
-        self.stack.setCurrentWidget(self.start_page)
+        self.stack.setCurrentWidget(
+            self.start_page
+        )
 
-    def show_project(self, name: str) -> None:
-        self.project_page.set_project_name(name)
-        self.stack.setCurrentWidget(self.project_page)
+    def show_project(
+        self,
+        name: str,
+    ) -> None:
+        self.project_page.set_project_name(
+            name
+        )
+
+        self.stack.setCurrentWidget(
+            self.project_page
+        )
+
+    def show_tileset(
+        self,
+        path: Path,
+    ) -> None:
+        self.tileset_editor.open_tileset(
+            path
+        )
+
+        self.stack.setCurrentWidget(
+            self.tileset_editor
+        )

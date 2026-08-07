@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from lupix_studio.assets.importer import import_png
+from lupix_studio.assets.registry import AssetRegistry
 from lupix_studio.project.creator import create_project
 from lupix_studio.project.loader import LoadedProject, load_project
 from lupix_studio.project.validator import validate_project
@@ -37,8 +38,14 @@ class MainWindow(QMainWindow):
         self.current_project: LoadedProject | None = None
         self.recent_projects = RecentProjectsManager()
 
-        self.setWindowTitle("Lupix Studio")
-        self.resize(1440, 900)
+        self.setWindowTitle(
+            "Lupix Studio"
+        )
+
+        self.resize(
+            1440,
+            900,
+        )
 
         self._create_menu()
         self._create_workspace()
@@ -50,25 +57,58 @@ class MainWindow(QMainWindow):
         self._refresh_recent_projects()
 
     def _create_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("Arquivo")
-        edit_menu = self.menuBar().addMenu("Editar")
-        project_menu = self.menuBar().addMenu("Projeto")
-        assets_menu = self.menuBar().addMenu("Assets")
-        help_menu = self.menuBar().addMenu("Ajuda")
+        file_menu = self.menuBar().addMenu(
+            "Arquivo"
+        )
 
-        new_action = QAction("Novo Projeto", self)
-        new_action.triggered.connect(self._on_new_project)
+        edit_menu = self.menuBar().addMenu(
+            "Editar"
+        )
 
-        open_action = QAction("Abrir Projeto", self)
-        open_action.triggered.connect(self._on_open_project)
+        project_menu = self.menuBar().addMenu(
+            "Projeto"
+        )
 
-        exit_action = QAction("Sair", self)
-        exit_action.triggered.connect(self.close)
+        assets_menu = self.menuBar().addMenu(
+            "Assets"
+        )
+
+        help_menu = self.menuBar().addMenu(
+            "Ajuda"
+        )
+
+        new_action = QAction(
+            "Novo Projeto",
+            self,
+        )
+
+        new_action.triggered.connect(
+            self._on_new_project
+        )
+
+        open_action = QAction(
+            "Abrir Projeto",
+            self,
+        )
+
+        open_action.triggered.connect(
+            self._on_open_project
+        )
+
+        exit_action = QAction(
+            "Sair",
+            self,
+        )
+
+        exit_action.triggered.connect(
+            self.close
+        )
 
         validate_action = QAction(
             "Validar Projeto",
             self,
         )
+
         validate_action.triggered.connect(
             self._validate_current_project
         )
@@ -77,35 +117,86 @@ class MainWindow(QMainWindow):
             "Importar PNG como Sprite",
             self,
         )
+
         import_sprite_action.triggered.connect(
-            lambda: self._import_png("sprites")
+            lambda: self._import_png(
+                "sprites"
+            )
         )
 
         import_tileset_action = QAction(
             "Importar PNG como TileSet",
             self,
         )
+
         import_tileset_action.triggered.connect(
-            lambda: self._import_png("tilesets")
+            lambda: self._import_png(
+                "tilesets"
+            )
         )
 
-        file_menu.addAction(new_action)
-        file_menu.addAction(open_action)
+        file_menu.addAction(
+            new_action
+        )
+
+        file_menu.addAction(
+            open_action
+        )
+
         file_menu.addSeparator()
-        file_menu.addAction(exit_action)
 
-        edit_menu.addAction(QAction("Desfazer", self))
-        edit_menu.addAction(QAction("Refazer", self))
+        file_menu.addAction(
+            exit_action
+        )
 
-        project_menu.addAction(validate_action)
+        edit_menu.addAction(
+            QAction(
+                "Desfazer",
+                self,
+            )
+        )
+
+        edit_menu.addAction(
+            QAction(
+                "Refazer",
+                self,
+            )
+        )
+
+        project_menu.addAction(
+            validate_action
+        )
+
         project_menu.addSeparator()
-        project_menu.addAction(QAction("Executar", self))
-        project_menu.addAction(QAction("Exportar", self))
 
-        assets_menu.addAction(import_sprite_action)
-        assets_menu.addAction(import_tileset_action)
+        project_menu.addAction(
+            QAction(
+                "Executar",
+                self,
+            )
+        )
 
-        help_menu.addAction(QAction("Sobre", self))
+        project_menu.addAction(
+            QAction(
+                "Exportar",
+                self,
+            )
+        )
+
+        assets_menu.addAction(
+            import_sprite_action
+        )
+
+        assets_menu.addAction(
+            import_tileset_action
+        )
+
+        help_menu.addAction(
+            QAction(
+                "Sobre",
+                self,
+            )
+        )
 
     def _create_workspace(self) -> None:
         self.workspace = WorkspaceWidget()
@@ -122,7 +213,9 @@ class MainWindow(QMainWindow):
             self._on_recent_project
         )
 
-        self.setCentralWidget(self.workspace)
+        self.setCentralWidget(
+            self.workspace
+        )
 
     def _create_project_dock(self) -> None:
         self.project_dock = QDockWidget(
@@ -149,7 +242,10 @@ class MainWindow(QMainWindow):
 
         self.asset_inspector = AssetInspector()
 
-        self.inspector_dock.setMinimumWidth(280)
+        self.inspector_dock.setMinimumWidth(
+            280
+        )
+
         self.inspector_dock.setWidget(
             self.asset_inspector
         )
@@ -168,13 +264,18 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
 
         self.console = QTextEdit()
-        self.console.setReadOnly(True)
+        self.console.setReadOnly(
+            True
+        )
+
         self.console.setPlainText(
             "Lupix Studio pronto."
         )
 
         self.problems = QTextEdit()
-        self.problems.setReadOnly(True)
+        self.problems.setReadOnly(
+            True
+        )
 
         self.asset_browser = AssetBrowser()
 
@@ -183,7 +284,7 @@ class MainWindow(QMainWindow):
         )
 
         self.asset_browser.asset_activated.connect(
-            self._show_asset_preview
+            self._activate_asset
         )
 
         tabs.addTab(
@@ -201,8 +302,13 @@ class MainWindow(QMainWindow):
             "Assets",
         )
 
-        dock.setWidget(tabs)
-        dock.setMinimumHeight(180)
+        dock.setWidget(
+            tabs
+        )
+
+        dock.setMinimumHeight(
+            180
+        )
 
         self.addDockWidget(
             Qt.DockWidgetArea.BottomDockWidgetArea,
@@ -211,11 +317,19 @@ class MainWindow(QMainWindow):
 
     def _create_status_bar(self) -> None:
         status = QStatusBar()
-        status.showMessage("Pronto")
-        self.setStatusBar(status)
+
+        status.showMessage(
+            "Pronto"
+        )
+
+        self.setStatusBar(
+            status
+        )
 
     def _on_new_project(self) -> None:
-        dialog = NewProjectDialog(self)
+        dialog = NewProjectDialog(
+            self
+        )
 
         if not dialog.exec():
             return
@@ -231,10 +345,14 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            create_project(config)
+            create_project(
+                config
+            )
+
             project = load_project(
                 config.project_dir
             )
+
         except (
             OSError,
             ValueError,
@@ -247,7 +365,9 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._open_project(project)
+        self._open_project(
+            project
+        )
 
     def _on_open_project(self) -> None:
         directory = QFileDialog.getExistingDirectory(
@@ -263,6 +383,7 @@ class MainWindow(QMainWindow):
             project = load_project(
                 Path(directory)
             )
+
         except (
             OSError,
             ValueError,
@@ -275,14 +396,19 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._open_project(project)
+        self._open_project(
+            project
+        )
 
     def _on_recent_project(
         self,
         path: Path,
     ) -> None:
         try:
-            project = load_project(path)
+            project = load_project(
+                path
+            )
+
         except (
             OSError,
             ValueError,
@@ -297,7 +423,9 @@ class MainWindow(QMainWindow):
             self._refresh_recent_projects()
             return
 
-        self._open_project(project)
+        self._open_project(
+            project
+        )
 
     def _open_project(
         self,
@@ -367,6 +495,7 @@ class MainWindow(QMainWindow):
                 self.current_project.root,
                 asset_type,
             )
+
         except (
             OSError,
             ValueError,
@@ -425,10 +554,35 @@ class MainWindow(QMainWindow):
             record
         )
 
-    def _show_asset_preview(
+    def _activate_asset(
         self,
         path: Path,
     ) -> None:
+        if self.current_project is None:
+            return
+
+        registry = AssetRegistry(
+            self.current_project.root
+        )
+
+        record = registry.find_by_path(
+            path
+        )
+
+        if record is None:
+            return
+
+        if record.type == "tilesets":
+            self.workspace.show_tileset(
+                path
+            )
+
+            self.statusBar().showMessage(
+                f"TileSet aberto: {record.name}"
+            )
+
+            return
+
         dialog = AssetPreviewDialog(
             path,
             self,
@@ -436,7 +590,9 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
-    def _validate_current_project(self) -> None:
+    def _validate_current_project(
+        self,
+    ) -> None:
         self.problems.clear()
 
         if self.current_project is None:
@@ -457,6 +613,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 "Projeto válido"
             )
+
             return
 
         for issue in issues:
@@ -470,7 +627,9 @@ class MainWindow(QMainWindow):
                 f"[{prefix}] {issue.message}"
             )
 
-    def _refresh_recent_projects(self) -> None:
+    def _refresh_recent_projects(
+        self,
+    ) -> None:
         projects = self.recent_projects.load()
 
         self.workspace.start_page.set_recent_projects(
