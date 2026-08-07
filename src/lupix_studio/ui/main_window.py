@@ -52,6 +52,14 @@ class MainWindow(QMainWindow):
 
     def _create_workspace(self) -> None:
         self.workspace = WorkspaceWidget()
+
+        self.workspace.start_page.new_project_requested.connect(
+            self._on_new_project
+        )
+        self.workspace.start_page.open_project_requested.connect(
+            self._on_open_project
+        )
+
         self.setCentralWidget(self.workspace)
 
     def _create_project_dock(self) -> None:
@@ -63,6 +71,9 @@ class MainWindow(QMainWindow):
 
         tree = QTreeWidget()
         tree.setHeaderHidden(True)
+        tree.setIndentation(18)
+        tree.setAnimated(True)
+        tree.setMinimumWidth(220)
 
         root = QTreeWidgetItem(["Projeto"])
         root.addChild(QTreeWidgetItem(["Cenas"]))
@@ -94,7 +105,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addStretch()
 
+        dock.setMinimumWidth(260)
         dock.setWidget(container)
+
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
     def _create_bottom_dock(self) -> None:
@@ -113,6 +126,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(problems, "Problemas")
 
         dock.setWidget(tabs)
+        dock.setMinimumHeight(160)
 
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
 
@@ -120,3 +134,9 @@ class MainWindow(QMainWindow):
         status = QStatusBar()
         status.showMessage("Pronto")
         self.setStatusBar(status)
+
+    def _on_new_project(self) -> None:
+        self.statusBar().showMessage("Novo Projeto")
+
+    def _on_open_project(self) -> None:
+        self.statusBar().showMessage("Abrir Projeto")

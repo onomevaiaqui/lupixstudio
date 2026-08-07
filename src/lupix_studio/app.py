@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QApplication
 from lupix_studio.core.logging import configure_logging
 from lupix_studio.settings.manager import SettingsManager
 from lupix_studio.ui.main_window import MainWindow
+from lupix_studio.ui.theme.dark import DARK_STYLESHEET
 
 
 def create_application() -> QApplication:
@@ -33,6 +34,8 @@ def main() -> int:
     logger.info("Idioma: %s", settings.language)
 
     app = create_application()
+
+    app.setStyleSheet(DARK_STYLESHEET)
 
     window = MainWindow()
     window.show()

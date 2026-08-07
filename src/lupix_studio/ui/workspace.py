@@ -1,5 +1,6 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget, QWidget
+
+from lupix_studio.ui.start_page import StartPage
 
 
 class WorkspaceWidget(QWidget):
@@ -8,8 +9,13 @@ class WorkspaceWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
 
-        label = QLabel("Viewport")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stack = QStackedWidget(self)
+
+        self.start_page = StartPage()
+        self.stack.addWidget(self.start_page)
+
+        from PySide6.QtWidgets import QVBoxLayout
 
         layout = QVBoxLayout(self)
-        layout.addWidget(label)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.stack)
