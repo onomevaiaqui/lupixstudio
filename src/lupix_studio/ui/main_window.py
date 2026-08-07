@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from lupix_studio.project.creator import create_project
 from lupix_studio.project.loader import LoadedProject, load_project
+from lupix_studio.settings.recent_projects import RecentProjectsManager
 from lupix_studio.ui.new_project_dialog import NewProjectDialog
 from lupix_studio.ui.project_tree import ProjectTree
 from lupix_studio.ui.workspace import WorkspaceWidget
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.current_project: LoadedProject | None = None
+        self.recent_projects = RecentProjectsManager()
 
         self.setWindowTitle("Lupix Studio")
         self.resize(1440, 900)
@@ -39,6 +41,8 @@ class MainWindow(QMainWindow):
         self._create_inspector_dock()
         self._create_bottom_dock()
         self._create_status_bar()
+
+        self._refresh_recent_projects()
 
     def _create_menu(self) -> None:
         file_menu = self.menuBar().addMenu("Arquivo")
@@ -74,8 +78,13 @@ class MainWindow(QMainWindow):
         self.workspace.start_page.new_project_requested.connect(
             self._on_new_project
         )
+
         self.workspace.start_page.open_project_requested.connect(
             self._on_open_project
+        )
+
+        self.workspace.start_page.recent_project_requested.connect(
+            self._on_recent_project
         )
 
         self.setCentralWidget(self.workspace)
@@ -176,7 +185,7 @@ class MainWindow(QMainWindow):
         try:
             create_project(config)
             project = load_project(config.project_dir)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, TypeError) as error:
             QMessageBox.critical(
                 self,
                 "Erro ao criar projeto",
@@ -198,7 +207,7 @@ class MainWindow(QMainWindow):
 
         try:
             project = load_project(Path(directory))
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, TypeError) as error:
             QMessageBox.critical(
                 self,
                 "Erro ao abrir projeto",
@@ -208,11 +217,29 @@ class MainWindow(QMainWindow):
 
         self._open_project(project)
 
+    def _on_recent_project(self, path: Path) -> None:
+        try:
+            project = load_project(path)
+        except (OSError, ValueError, TypeError) as error:
+            QMessageBox.critical(
+                self,
+                "Erro ao abrir projeto",
+                str(error),
+            )
+
+            self._refresh_recent_projects()
+            return
+
+        self._open_project(project)
+
     def _open_project(
         self,
         project: LoadedProject,
     ) -> None:
         self.current_project = project
+
+        self.recent_projects.add(project.root)
+        self._refresh_recent_projects()
 
         self.project_tree.load_project(
             project.root
@@ -232,4 +259,11 @@ class MainWindow(QMainWindow):
 
         self.console.append(
             f"Projeto aberto: {project.root}"
+        )
+
+    def _refresh_recent_projects(self) -> None:
+        projects = self.recent_projects.load()
+
+        self.workspace.start_page.set_recent_projects(
+            projects
         )
