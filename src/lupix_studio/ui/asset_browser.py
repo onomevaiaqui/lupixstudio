@@ -22,6 +22,7 @@ STATUS_LABELS = {
 class AssetBrowser(QListWidget):
     """Exibe assets importados do projeto."""
 
+    asset_selected = Signal(Path)
     asset_activated = Signal(Path)
 
     def __init__(self) -> None:
@@ -42,6 +43,10 @@ class AssetBrowser(QListWidget):
         )
 
         self.setSpacing(8)
+
+        self.itemClicked.connect(
+            self._on_item_clicked
+        )
 
         self.itemDoubleClicked.connect(
             self._on_item_double_clicked
@@ -109,6 +114,21 @@ class AssetBrowser(QListWidget):
         item.setToolTip(tooltip)
 
         self.addItem(item)
+
+    def _on_item_clicked(
+        self,
+        item: QListWidgetItem,
+    ) -> None:
+        value = item.data(
+            Qt.ItemDataRole.UserRole
+        )
+
+        if not value:
+            return
+
+        self.asset_selected.emit(
+            Path(str(value))
+        )
 
     def _on_item_double_clicked(
         self,
