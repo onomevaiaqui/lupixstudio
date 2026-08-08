@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from lupix_studio.assets.registry import AssetRecord
 from lupix_studio.scene.model import SceneResource
+from lupix_studio.ui.scene_viewport import SceneViewport
 from lupix_studio.ui.start_page import StartPage
 from lupix_studio.ui.tileset_editor import TileSetEditor
 
@@ -20,8 +21,12 @@ class ProjectPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
 
-        self.title = QLabel("Projeto")
-        self.title.setObjectName("ViewportTitle")
+        self.title = QLabel(
+            "Projeto"
+        )
+        self.title.setObjectName(
+            "ViewportTitle"
+        )
         self.title.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
@@ -36,84 +41,24 @@ class ProjectPage(QWidget):
         layout = QVBoxLayout(self)
 
         layout.addStretch()
-        layout.addWidget(self.title)
-        layout.addWidget(self.subtitle)
+        layout.addWidget(
+            self.title
+        )
+        layout.addWidget(
+            self.subtitle
+        )
         layout.addStretch()
 
     def set_project_name(
         self,
         name: str,
     ) -> None:
-        self.title.setText(name)
+        self.title.setText(
+            name
+        )
+
         self.subtitle.setText(
             "Nenhuma cena aberta"
-        )
-
-
-class ScenePage(QWidget):
-    """Página inicial de uma cena aberta."""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.scene_path: Path | None = None
-        self.scene_resource: SceneResource | None = None
-
-        self.title = QLabel(
-            "Nenhuma cena aberta"
-        )
-        self.title.setObjectName(
-            "ViewportTitle"
-        )
-        self.title.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        self.resolution = QLabel("-")
-        self.resolution.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        self.entity_count = QLabel("-")
-        self.entity_count.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        self.hint = QLabel(
-            "Scene Editor será exibido aqui."
-        )
-        self.hint.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        layout = QVBoxLayout(self)
-
-        layout.addStretch()
-        layout.addWidget(self.title)
-        layout.addWidget(self.resolution)
-        layout.addWidget(self.entity_count)
-        layout.addSpacing(16)
-        layout.addWidget(self.hint)
-        layout.addStretch()
-
-    def open_scene(
-        self,
-        path: Path,
-        resource: SceneResource,
-    ) -> None:
-        self.scene_path = path.resolve()
-        self.scene_resource = resource
-
-        self.title.setText(
-            resource.name
-        )
-
-        self.resolution.setText(
-            f"Resolução: {resource.width} × {resource.height}"
-        )
-
-        self.entity_count.setText(
-            f"Entidades: {len(resource.entities)}"
         )
 
 
@@ -127,7 +72,7 @@ class WorkspaceWidget(QWidget):
 
         self.start_page = StartPage()
         self.project_page = ProjectPage()
-        self.scene_page = ScenePage()
+        self.scene_viewport = SceneViewport()
         self.tileset_editor = TileSetEditor()
 
         self.stack.addWidget(
@@ -139,7 +84,7 @@ class WorkspaceWidget(QWidget):
         )
 
         self.stack.addWidget(
-            self.scene_page
+            self.scene_viewport
         )
 
         self.stack.addWidget(
@@ -161,7 +106,9 @@ class WorkspaceWidget(QWidget):
 
         self.show_start_page()
 
-    def show_start_page(self) -> None:
+    def show_start_page(
+        self,
+    ) -> None:
         self.stack.setCurrentWidget(
             self.start_page
         )
@@ -183,13 +130,14 @@ class WorkspaceWidget(QWidget):
         path: Path,
         resource: SceneResource,
     ) -> None:
-        self.scene_page.open_scene(
-            path,
-            resource,
+        del path
+
+        self.scene_viewport.open_scene(
+            resource
         )
 
         self.stack.setCurrentWidget(
-            self.scene_page
+            self.scene_viewport
         )
 
     def show_tileset(
