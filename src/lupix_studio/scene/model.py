@@ -201,6 +201,31 @@ class CameraComponent:
 
 
 @dataclass(slots=True)
+class TileMapComponent:
+    resource_path: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "resource_path": self.resource_path,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> TileMapComponent:
+        return cls(
+            resource_path=str(
+                data.get(
+                    "resource_path",
+                    "",
+                )
+                or ""
+            ),
+        )
+
+
+@dataclass(slots=True)
 class SceneEntity:
     name: str
 
@@ -216,8 +241,13 @@ class SceneEntity:
 
     sprite: SpriteComponent | None = None
     camera: CameraComponent | None = None
+    tilemap: TileMapComponent | None = None
 
     def refresh_kind(self) -> None:
+        if self.tilemap is not None:
+            self.kind = "tilemap"
+            return
+
         if self.camera is not None:
             self.kind = "camera"
             return
@@ -246,6 +276,11 @@ class SceneEntity:
                 self.camera.to_dict()
             )
 
+        if self.tilemap is not None:
+            data["tilemap"] = (
+                self.tilemap.to_dict()
+            )
+
         return data
 
     @classmethod
@@ -272,8 +307,13 @@ class SceneEntity:
             "camera"
         )
 
+        tilemap_data = data.get(
+            "tilemap"
+        )
+
         sprite: SpriteComponent | None = None
         camera: CameraComponent | None = None
+        tilemap: TileMapComponent | None = None
 
         if isinstance(
             sprite_data,
@@ -292,6 +332,16 @@ class SceneEntity:
             camera = (
                 CameraComponent.from_dict(
                     camera_data
+                )
+            )
+
+        if isinstance(
+            tilemap_data,
+            dict,
+        ):
+            tilemap = (
+                TileMapComponent.from_dict(
+                    tilemap_data
                 )
             )
 
@@ -322,6 +372,7 @@ class SceneEntity:
             ),
             sprite=sprite,
             camera=camera,
+            tilemap=tilemap,
         )
 
         entity.refresh_kind()
@@ -339,7 +390,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 3
+    format: int = 4
     type: str = "scene"
 
     def add_entity(
