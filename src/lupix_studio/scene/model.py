@@ -30,21 +30,59 @@ class Transform2D:
         cls,
         data: dict[str, object],
     ) -> Transform2D:
-        position = data.get("position", {})
-        scale = data.get("scale", {})
+        position = data.get(
+            "position",
+            {},
+        )
 
-        if not isinstance(position, dict):
+        scale = data.get(
+            "scale",
+            {},
+        )
+
+        if not isinstance(
+            position,
+            dict,
+        ):
             position = {}
 
-        if not isinstance(scale, dict):
+        if not isinstance(
+            scale,
+            dict,
+        ):
             scale = {}
 
         return cls(
-            x=float(position.get("x", 0.0)),
-            y=float(position.get("y", 0.0)),
-            rotation=float(data.get("rotation", 0.0)),
-            scale_x=float(scale.get("x", 1.0)),
-            scale_y=float(scale.get("y", 1.0)),
+            x=float(
+                position.get(
+                    "x",
+                    0.0,
+                )
+            ),
+            y=float(
+                position.get(
+                    "y",
+                    0.0,
+                )
+            ),
+            rotation=float(
+                data.get(
+                    "rotation",
+                    0.0,
+                )
+            ),
+            scale_x=float(
+                scale.get(
+                    "x",
+                    1.0,
+                )
+            ),
+            scale_y=float(
+                scale.get(
+                    "y",
+                    1.0,
+                )
+            ),
         )
 
 
@@ -72,20 +110,92 @@ class SpriteComponent:
     ) -> SpriteComponent:
         return cls(
             asset_id=str(
-                data.get("asset_id")
+                data.get(
+                    "asset_id",
+                    "",
+                )
                 or ""
             ),
             opacity=float(
-                data.get("opacity", 1.0)
+                data.get(
+                    "opacity",
+                    1.0,
+                )
             ),
             flip_x=bool(
-                data.get("flip_x", False)
+                data.get(
+                    "flip_x",
+                    False,
+                )
             ),
             flip_y=bool(
-                data.get("flip_y", False)
+                data.get(
+                    "flip_y",
+                    False,
+                )
             ),
             layer=int(
-                data.get("layer", 0)
+                data.get(
+                    "layer",
+                    0,
+                )
+            ),
+        )
+
+
+@dataclass(slots=True)
+class CameraComponent:
+    active: bool = False
+    width: int = 480
+    height: int = 270
+    zoom: float = 1.0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "active": self.active,
+            "width": self.width,
+            "height": self.height,
+            "zoom": self.zoom,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> CameraComponent:
+        return cls(
+            active=bool(
+                data.get(
+                    "active",
+                    False,
+                )
+            ),
+            width=max(
+                1,
+                int(
+                    data.get(
+                        "width",
+                        480,
+                    )
+                ),
+            ),
+            height=max(
+                1,
+                int(
+                    data.get(
+                        "height",
+                        270,
+                    )
+                ),
+            ),
+            zoom=max(
+                0.01,
+                float(
+                    data.get(
+                        "zoom",
+                        1.0,
+                    )
+                ),
             ),
         )
 
@@ -105,6 +215,18 @@ class SceneEntity:
     )
 
     sprite: SpriteComponent | None = None
+    camera: CameraComponent | None = None
+
+    def refresh_kind(self) -> None:
+        if self.camera is not None:
+            self.kind = "camera"
+            return
+
+        if self.sprite is not None:
+            self.kind = "sprite"
+            return
+
+        self.kind = "empty"
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -115,7 +237,14 @@ class SceneEntity:
         }
 
         if self.sprite is not None:
-            data["sprite"] = self.sprite.to_dict()
+            data["sprite"] = (
+                self.sprite.to_dict()
+            )
+
+        if self.camera is not None:
+            data["camera"] = (
+                self.camera.to_dict()
+            )
 
         return data
 
@@ -139,34 +268,65 @@ class SceneEntity:
             "sprite"
         )
 
-        sprite = None
+        camera_data = data.get(
+            "camera"
+        )
+
+        sprite: SpriteComponent | None = None
+        camera: CameraComponent | None = None
 
         if isinstance(
             sprite_data,
             dict,
         ):
-            sprite = SpriteComponent.from_dict(
-                sprite_data
+            sprite = (
+                SpriteComponent.from_dict(
+                    sprite_data
+                )
             )
 
-        return cls(
+        if isinstance(
+            camera_data,
+            dict,
+        ):
+            camera = (
+                CameraComponent.from_dict(
+                    camera_data
+                )
+            )
+
+        entity = cls(
             id=str(
-                data.get("id")
+                data.get(
+                    "id",
+                    "",
+                )
                 or uuid4().hex
             ),
             name=str(
-                data.get("name")
+                data.get(
+                    "name",
+                    "",
+                )
                 or "Entity"
             ),
             kind=str(
-                data.get("kind")
+                data.get(
+                    "kind",
+                    "",
+                )
                 or "empty"
             ),
             transform=Transform2D.from_dict(
                 transform_data
             ),
             sprite=sprite,
+            camera=camera,
         )
+
+        entity.refresh_kind()
+
+        return entity
 
 
 @dataclass(slots=True)
@@ -179,7 +339,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 2
+    format: int = 3
     type: str = "scene"
 
     def add_entity(
@@ -198,7 +358,9 @@ class SceneResource:
             self.entities
         ):
             if entity.id == entity_id:
-                del self.entities[index]
+                del self.entities[
+                    index
+                ]
                 return True
 
         return False
@@ -212,6 +374,30 @@ class SceneResource:
                 return entity
 
         return None
+
+    def active_camera(
+        self,
+    ) -> SceneEntity | None:
+        for entity in self.entities:
+            if (
+                entity.camera is not None
+                and entity.camera.active
+            ):
+                return entity
+
+        return None
+
+    def activate_camera(
+        self,
+        entity_id: str,
+    ) -> None:
+        for entity in self.entities:
+            if entity.camera is None:
+                continue
+
+            entity.camera.active = (
+                entity.id == entity_id
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -256,32 +442,43 @@ class SceneResource:
             list,
         ):
             for raw_entity in raw_entities:
-                if isinstance(
+                if not isinstance(
                     raw_entity,
                     dict,
                 ):
-                    entities.append(
-                        SceneEntity.from_dict(
-                            raw_entity
-                        )
+                    continue
+
+                entities.append(
+                    SceneEntity.from_dict(
+                        raw_entity
                     )
+                )
 
         return cls(
             name=str(
-                data.get("name")
+                data.get(
+                    "name",
+                    "",
+                )
                 or "Scene"
             ),
-            width=int(
-                resolution.get(
-                    "width",
-                    480,
-                )
+            width=max(
+                1,
+                int(
+                    resolution.get(
+                        "width",
+                        480,
+                    )
+                ),
             ),
-            height=int(
-                resolution.get(
-                    "height",
-                    270,
-                )
+            height=max(
+                1,
+                int(
+                    resolution.get(
+                        "height",
+                        270,
+                    )
+                ),
             ),
             entities=entities,
             format=int(

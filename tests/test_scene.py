@@ -6,6 +6,9 @@ from lupix_studio.scene import (
     SceneSerializer,
     Transform2D,
 )
+from lupix_studio.scene.model import (
+    SpriteComponent,
+)
 
 
 def test_scene_default_resolution() -> None:
@@ -25,14 +28,23 @@ def test_add_entity() -> None:
     player = SceneEntity(
         name="Player",
         kind="sprite",
+        sprite=SpriteComponent(
+            asset_id="player-asset"
+        ),
     )
 
     scene.add_entity(
         player
     )
 
-    assert len(scene.entities) == 1
-    assert scene.entities[0].name == "Player"
+    assert len(
+        scene.entities
+    ) == 1
+
+    assert (
+        scene.entities[0].name
+        == "Player"
+    )
 
 
 def test_find_entity() -> None:
@@ -82,17 +94,27 @@ def test_scene_roundtrip(
         height=270,
     )
 
+    player = SceneEntity(
+        name="Player",
+        transform=Transform2D(
+            x=120,
+            y=180,
+            scale_x=2,
+            scale_y=2,
+        ),
+        sprite=SpriteComponent(
+            asset_id="player-asset",
+            opacity=1.0,
+            flip_x=False,
+            flip_y=False,
+            layer=2,
+        ),
+    )
+
+    player.refresh_kind()
+
     scene.add_entity(
-        SceneEntity(
-            name="Player",
-            kind="sprite",
-            transform=Transform2D(
-                x=120,
-                y=180,
-                scale_x=2,
-                scale_y=2,
-            ),
-        )
+        player
     )
 
     serializer = SceneSerializer()
@@ -116,12 +138,51 @@ def test_scene_roundtrip(
         loaded.entities
     ) == 1
 
-    player = loaded.entities[0]
+    loaded_player = (
+        loaded.entities[0]
+    )
 
-    assert player.name == "Player"
-    assert player.kind == "sprite"
+    assert (
+        loaded_player.name
+        == "Player"
+    )
 
-    assert player.transform.x == 120
-    assert player.transform.y == 180
-    assert player.transform.scale_x == 2
-    assert player.transform.scale_y == 2
+    assert (
+        loaded_player.kind
+        == "sprite"
+    )
+
+    assert (
+        loaded_player.transform.x
+        == 120
+    )
+
+    assert (
+        loaded_player.transform.y
+        == 180
+    )
+
+    assert (
+        loaded_player.transform.scale_x
+        == 2
+    )
+
+    assert (
+        loaded_player.transform.scale_y
+        == 2
+    )
+
+    assert (
+        loaded_player.sprite
+        is not None
+    )
+
+    assert (
+        loaded_player.sprite.asset_id
+        == "player-asset"
+    )
+
+    assert (
+        loaded_player.sprite.layer
+        == 2
+    )
