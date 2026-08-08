@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QStackedWidget,
     QStatusBar,
     QTabWidget,
     QTextEdit,
@@ -19,6 +20,7 @@ from lupix_studio.project.creator import create_project
 from lupix_studio.project.loader import LoadedProject, load_project
 from lupix_studio.project.validator import validate_project
 from lupix_studio.scene.creator import create_scene
+from lupix_studio.scene.model import SceneResource
 from lupix_studio.scene.serializer import SceneSerializer
 from lupix_studio.settings.recent_projects import RecentProjectsManager
 from lupix_studio.ui.asset_browser import AssetBrowser
@@ -30,6 +32,7 @@ from lupix_studio.ui.asset_preview_dialog import AssetPreviewDialog
 from lupix_studio.ui.new_project_dialog import NewProjectDialog
 from lupix_studio.ui.new_scene_dialog import NewSceneDialog
 from lupix_studio.ui.project_tree import ProjectTree
+from lupix_studio.ui.scene_tree import SceneTree
 from lupix_studio.ui.workspace import WorkspaceWidget
 
 
@@ -41,18 +44,13 @@ class MainWindow(QMainWindow):
 
         self.current_project: LoadedProject | None = None
         self.current_scene_path: Path | None = None
+        self.current_scene: SceneResource | None = None
 
         self.recent_projects = RecentProjectsManager()
         self.scene_serializer = SceneSerializer()
 
-        self.setWindowTitle(
-            "Lupix Studio"
-        )
-
-        self.resize(
-            1440,
-            900,
-        )
+        self.setWindowTitle("Lupix Studio")
+        self.resize(1440, 900)
 
         self._create_menu()
         self._create_workspace()
@@ -88,21 +86,19 @@ class MainWindow(QMainWindow):
             "Ajuda"
         )
 
-        new_action = QAction(
+        new_project_action = QAction(
             "Novo Projeto",
             self,
         )
-
-        new_action.triggered.connect(
+        new_project_action.triggered.connect(
             self._on_new_project
         )
 
-        open_action = QAction(
+        open_project_action = QAction(
             "Abrir Projeto",
             self,
         )
-
-        open_action.triggered.connect(
+        open_project_action.triggered.connect(
             self._on_open_project
         )
 
@@ -110,7 +106,6 @@ class MainWindow(QMainWindow):
             "Sair",
             self,
         )
-
         exit_action.triggered.connect(
             self.close
         )
@@ -119,7 +114,6 @@ class MainWindow(QMainWindow):
             "Validar Projeto",
             self,
         )
-
         validate_action.triggered.connect(
             self._validate_current_project
         )
@@ -128,16 +122,30 @@ class MainWindow(QMainWindow):
             "Nova Cena",
             self,
         )
-
         new_scene_action.triggered.connect(
             self._on_new_scene
+        )
+
+        project_view_action = QAction(
+            "Voltar ao Projeto",
+            self,
+        )
+        project_view_action.triggered.connect(
+            self._show_project_view
+        )
+
+        save_scene_action = QAction(
+            "Salvar Cena",
+            self,
+        )
+        save_scene_action.triggered.connect(
+            self._save_current_scene
         )
 
         import_sprite_action = QAction(
             "Importar PNG como Sprite",
             self,
         )
-
         import_sprite_action.triggered.connect(
             lambda: self._import_png(
                 "sprites"
@@ -148,7 +156,6 @@ class MainWindow(QMainWindow):
             "Importar PNG como TileSet",
             self,
         )
-
         import_tileset_action.triggered.connect(
             lambda: self._import_png(
                 "tilesets"
@@ -156,15 +163,12 @@ class MainWindow(QMainWindow):
         )
 
         file_menu.addAction(
-            new_action
+            new_project_action
         )
-
         file_menu.addAction(
-            open_action
+            open_project_action
         )
-
         file_menu.addSeparator()
-
         file_menu.addAction(
             exit_action
         )
@@ -175,7 +179,6 @@ class MainWindow(QMainWindow):
                 self,
             )
         )
-
         edit_menu.addAction(
             QAction(
                 "Refazer",
@@ -186,16 +189,13 @@ class MainWindow(QMainWindow):
         project_menu.addAction(
             validate_action
         )
-
         project_menu.addSeparator()
-
         project_menu.addAction(
             QAction(
                 "Executar",
                 self,
             )
         )
-
         project_menu.addAction(
             QAction(
                 "Exportar",
@@ -206,11 +206,17 @@ class MainWindow(QMainWindow):
         scene_menu.addAction(
             new_scene_action
         )
+        scene_menu.addAction(
+            save_scene_action
+        )
+        scene_menu.addSeparator()
+        scene_menu.addAction(
+            project_view_action
+        )
 
         assets_menu.addAction(
             import_sprite_action
         )
-
         assets_menu.addAction(
             import_tileset_action
         )
@@ -237,6 +243,10 @@ class MainWindow(QMainWindow):
             self._on_recent_project
         )
 
+        self.workspace.scene_viewport.entity_selected.connect(
+            self._on_viewport_entity_selected
+        )
+
         self.setCentralWidget(
             self.workspace
         )
@@ -247,14 +257,34 @@ class MainWindow(QMainWindow):
             self,
         )
 
+        self.left_stack = QStackedWidget()
+
         self.project_tree = ProjectTree()
 
         self.project_tree.itemDoubleClicked.connect(
             self._on_project_item_double_clicked
         )
 
-        self.project_dock.setWidget(
+        self.scene_tree = SceneTree()
+
+        self.scene_tree.entity_selected.connect(
+            self._on_scene_tree_entity_selected
+        )
+
+        self.scene_tree.scene_changed.connect(
+            self._on_scene_changed
+        )
+
+        self.left_stack.addWidget(
             self.project_tree
+        )
+
+        self.left_stack.addWidget(
+            self.scene_tree
+        )
+
+        self.project_dock.setWidget(
+            self.left_stack
         )
 
         self.addDockWidget(
@@ -295,7 +325,6 @@ class MainWindow(QMainWindow):
         self.console.setReadOnly(
             True
         )
-
         self.console.setPlainText(
             "Lupix Studio pronto."
         )
@@ -345,10 +374,7 @@ class MainWindow(QMainWindow):
 
     def _create_status_bar(self) -> None:
         status = QStatusBar()
-
-        status.showMessage(
-            "Pronto"
-        )
+        status.showMessage("Pronto")
 
         self.setStatusBar(
             status
@@ -461,6 +487,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         self.current_project = project
         self.current_scene_path = None
+        self.current_scene = None
 
         self.recent_projects.add(
             project.root
@@ -477,6 +504,12 @@ class MainWindow(QMainWindow):
         )
 
         self.asset_inspector.clear_asset()
+
+        self.scene_tree.set_scene(
+            None
+        )
+
+        self._show_project_hierarchy()
 
         self.workspace.show_project(
             project.name
@@ -560,9 +593,16 @@ class MainWindow(QMainWindow):
     def _open_scene(
         self,
         path: Path,
-        resource,
+        resource: SceneResource,
     ) -> None:
         self.current_scene_path = path.resolve()
+        self.current_scene = resource
+
+        self.scene_tree.set_scene(
+            resource
+        )
+
+        self._show_scene_hierarchy()
 
         self.workspace.show_scene(
             self.current_scene_path,
@@ -581,8 +621,34 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(
                 f"{resource.name} - "
                 f"{self.current_project.name} - "
-                f"Lupix Studio"
+                "Lupix Studio"
             )
+
+    def _open_scene_file(
+        self,
+        path: Path,
+    ) -> None:
+        try:
+            resource = self.scene_serializer.load(
+                path
+            )
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
+            QMessageBox.critical(
+                self,
+                "Erro ao abrir cena",
+                str(error),
+            )
+            return
+
+        self._open_scene(
+            path,
+            resource,
+        )
 
     def _on_project_item_double_clicked(
         self,
@@ -611,30 +677,89 @@ class MainWindow(QMainWindow):
                 path
             )
 
-    def _open_scene_file(
-        self,
-        path: Path,
-    ) -> None:
+    def _show_project_view(self) -> None:
+        if self.current_project is None:
+            return
+
+        self._show_project_hierarchy()
+
+        self.workspace.show_project(
+            self.current_project.name
+        )
+
+        self.setWindowTitle(
+            f"{self.current_project.name} - Lupix Studio"
+        )
+
+        self.statusBar().showMessage(
+            "Visualização do projeto"
+        )
+
+    def _show_project_hierarchy(self) -> None:
+        self.left_stack.setCurrentWidget(
+            self.project_tree
+        )
+
+        self.project_dock.setWindowTitle(
+            "Projeto"
+        )
+
+    def _show_scene_hierarchy(self) -> None:
+        self.left_stack.setCurrentWidget(
+            self.scene_tree
+        )
+
+        self.project_dock.setWindowTitle(
+            "Hierarquia"
+        )
+
+    def _on_scene_changed(self) -> None:
+        if self.current_scene is None:
+            return
+
+        self.workspace.scene_viewport.refresh_entities()
+
+        self._save_current_scene()
+
+    def _save_current_scene(self) -> None:
+        if (
+            self.current_scene is None
+            or self.current_scene_path is None
+        ):
+            return
+
         try:
-            resource = self.scene_serializer.load(
-                path
+            self.scene_serializer.save(
+                self.current_scene,
+                self.current_scene_path,
             )
 
-        except (
-            OSError,
-            ValueError,
-            TypeError,
-        ) as error:
+        except OSError as error:
             QMessageBox.critical(
                 self,
-                "Erro ao abrir cena",
+                "Erro ao salvar cena",
                 str(error),
             )
             return
 
-        self._open_scene(
-            path,
-            resource,
+        self.statusBar().showMessage(
+            f"Cena salva: {self.current_scene.name}"
+        )
+
+    def _on_scene_tree_entity_selected(
+        self,
+        entity_id: str,
+    ) -> None:
+        self.workspace.scene_viewport.select_entity(
+            entity_id
+        )
+
+    def _on_viewport_entity_selected(
+        self,
+        entity_id: str,
+    ) -> None:
+        self.scene_tree.select_entity(
+            entity_id
         )
 
     def _import_png(

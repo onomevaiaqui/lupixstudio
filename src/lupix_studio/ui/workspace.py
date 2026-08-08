@@ -24,9 +24,11 @@ class ProjectPage(QWidget):
         self.title = QLabel(
             "Projeto"
         )
+
         self.title.setObjectName(
             "ViewportTitle"
         )
+
         self.title.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
@@ -34,6 +36,7 @@ class ProjectPage(QWidget):
         self.subtitle = QLabel(
             "Nenhuma cena aberta"
         )
+
         self.subtitle.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
@@ -91,7 +94,9 @@ class WorkspaceWidget(QWidget):
             self.tileset_editor
         )
 
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.setContentsMargins(
             0,

@@ -1,8 +1,11 @@
-from PySide6.QtCore import QPointF, QRectF, Qt
+from __future__ import annotations
+
+from PySide6.QtCore import QPointF, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QGraphicsEllipseItem,
     QGraphicsScene,
     QGraphicsView,
     QHBoxLayout,
@@ -11,22 +14,34 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lupix_studio.scene.model import SceneResource
+from lupix_studio.scene.model import SceneEntity, SceneResource
 
 
 class SceneCanvas(QGraphicsView):
     """Viewport visual de uma Scene Lupix."""
 
+    entity_selected = Signal(str)
+
     def __init__(self) -> None:
         super().__init__()
 
         self.graphics_scene = QGraphicsScene(self)
-        self.setScene(self.graphics_scene)
+        self.setScene(
+            self.graphics_scene
+        )
+
+        self.resource: SceneResource | None = None
 
         self.scene_width = 480
         self.scene_height = 270
+
         self.grid_size = 16
         self.grid_visible = True
+
+        self.entity_items: dict[
+            str,
+            QGraphicsEllipseItem,
+        ] = {}
 
         self.setBackgroundBrush(
             QColor("#111216")
@@ -45,18 +60,47 @@ class SceneCanvas(QGraphicsView):
             False,
         )
 
-        self.setSceneSize(
+        self.graphics_scene.selectionChanged.connect(
+            self._on_graphics_selection_changed
+        )
+
+        self.set_scene_size(
             self.scene_width,
             self.scene_height,
         )
 
-    def setSceneSize(
+    def set_resource(
+        self,
+        resource: SceneResource | None,
+    ) -> None:
+        self.resource = resource
+
+        if resource is None:
+            self.graphics_scene.clear()
+            self.entity_items.clear()
+            return
+
+        self.set_scene_size(
+            resource.width,
+            resource.height,
+        )
+
+        self.rebuild_entities()
+
+    def set_scene_size(
         self,
         width: int,
         height: int,
     ) -> None:
-        self.scene_width = max(1, int(width))
-        self.scene_height = max(1, int(height))
+        self.scene_width = max(
+            1,
+            int(width),
+        )
+
+        self.scene_height = max(
+            1,
+            int(height),
+        )
 
         margin = 128
 
@@ -64,8 +108,10 @@ class SceneCanvas(QGraphicsView):
             QRectF(
                 -margin,
                 -margin,
-                self.scene_width + margin * 2,
-                self.scene_height + margin * 2,
+                self.scene_width
+                + margin * 2,
+                self.scene_height
+                + margin * 2,
             )
         )
 
@@ -82,7 +128,11 @@ class SceneCanvas(QGraphicsView):
         self,
         size: int,
     ) -> None:
-        self.grid_size = max(1, int(size))
+        self.grid_size = max(
+            1,
+            int(size),
+        )
+
         self.viewport().update()
 
     def set_zoom(
@@ -90,23 +140,121 @@ class SceneCanvas(QGraphicsView):
         factor: float,
     ) -> None:
         self.resetTransform()
+
         self.scale(
             factor,
             factor,
         )
 
-    def frame_scene(self) -> None:
-        target = QRectF(
-            0,
-            0,
-            self.scene_width,
-            self.scene_height,
+    def rebuild_entities(
+        self,
+    ) -> None:
+        self._remove_entity_items()
+
+        if self.resource is None:
+            return
+
+        for entity in self.resource.entities:
+            self._add_entity_item(
+                entity
+            )
+
+    def _remove_entity_items(
+        self,
+    ) -> None:
+        for item in self.entity_items.values():
+            self.graphics_scene.removeItem(
+                item
+            )
+
+        self.entity_items.clear()
+
+    def _add_entity_item(
+        self,
+        entity: SceneEntity,
+    ) -> None:
+        radius = 5
+
+        item = QGraphicsEllipseItem(
+            -radius,
+            -radius,
+            radius * 2,
+            radius * 2,
         )
 
-        self.fitInView(
-            target,
-            Qt.AspectRatioMode.KeepAspectRatio,
+        item.setBrush(
+            QColor("#d5b85a")
         )
+
+        item.setPen(
+            QPen(
+                QColor("#f4df8c"),
+                1,
+            )
+        )
+
+        item.setPos(
+            entity.transform.x,
+            entity.transform.y,
+        )
+
+        item.setFlag(
+            QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable,
+            True,
+        )
+
+        item.setData(
+            0,
+            entity.id,
+        )
+
+        self.graphics_scene.addItem(
+            item
+        )
+
+        self.entity_items[
+            entity.id
+        ] = item
+
+    def select_entity(
+        self,
+        entity_id: str,
+    ) -> None:
+        item = self.entity_items.get(
+            entity_id
+        )
+
+        if item is None:
+            return
+
+        self.graphics_scene.clearSelection()
+
+        item.setSelected(
+            True
+        )
+
+        self.centerOn(
+            item
+        )
+
+    def _on_graphics_selection_changed(
+        self,
+    ) -> None:
+        selected = (
+            self.graphics_scene.selectedItems()
+        )
+
+        if not selected:
+            return
+
+        entity_id = selected[0].data(
+            0
+        )
+
+        if entity_id:
+            self.entity_selected.emit(
+                str(entity_id)
+            )
 
     def drawBackground(
         self,
@@ -134,21 +282,32 @@ class SceneCanvas(QGraphicsView):
             QColor("#7a7d84"),
             1,
         )
-        border_pen.setCosmetic(True)
+
+        border_pen.setCosmetic(
+            True
+        )
 
         painter.setPen(
             border_pen
         )
+
         painter.drawRect(
             game_rect
         )
 
-        if not self.grid_visible:
-            self._draw_origin(
+        if self.grid_visible:
+            self._draw_grid(
                 painter
             )
-            return
 
+        self._draw_origin(
+            painter
+        )
+
+    def _draw_grid(
+        self,
+        painter: QPainter,
+    ) -> None:
         grid_pen = QPen(
             QColor(
                 255,
@@ -158,7 +317,10 @@ class SceneCanvas(QGraphicsView):
             ),
             1,
         )
-        grid_pen.setCosmetic(True)
+
+        grid_pen.setCosmetic(
+            True
+        )
 
         painter.setPen(
             grid_pen
@@ -177,6 +339,7 @@ class SceneCanvas(QGraphicsView):
                     self.scene_height,
                 ),
             )
+
             x += self.grid_size
 
         y = 0
@@ -192,11 +355,8 @@ class SceneCanvas(QGraphicsView):
                     y,
                 ),
             )
-            y += self.grid_size
 
-        self._draw_origin(
-            painter
-        )
+            y += self.grid_size
 
     def _draw_origin(
         self,
@@ -206,7 +366,10 @@ class SceneCanvas(QGraphicsView):
             QColor("#d65f5f"),
             1,
         )
-        axis_pen.setCosmetic(True)
+
+        axis_pen.setCosmetic(
+            True
+        )
 
         painter.setPen(
             axis_pen
@@ -246,6 +409,8 @@ class SceneCanvas(QGraphicsView):
 class SceneViewport(QWidget):
     """Editor visual básico de uma Scene."""
 
+    entity_selected = Signal(str)
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -262,6 +427,7 @@ class SceneViewport(QWidget):
         self.grid_checkbox = QCheckBox(
             "Grade"
         )
+
         self.grid_checkbox.setChecked(
             True
         )
@@ -332,7 +498,9 @@ class SceneViewport(QWidget):
 
         controls.addStretch()
 
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.addWidget(
             self.title
@@ -362,6 +530,10 @@ class SceneViewport(QWidget):
             self._update_zoom
         )
 
+        self.canvas.entity_selected.connect(
+            self.entity_selected.emit
+        )
+
         self._update_grid()
         self._update_zoom()
 
@@ -379,13 +551,25 @@ class SceneViewport(QWidget):
             f"{resource.width} × {resource.height}"
         )
 
-        self.canvas.setSceneSize(
-            resource.width,
-            resource.height,
+        self.canvas.set_resource(
+            resource
         )
 
         self._update_grid()
         self._update_zoom()
+
+    def refresh_entities(
+        self,
+    ) -> None:
+        self.canvas.rebuild_entities()
+
+    def select_entity(
+        self,
+        entity_id: str,
+    ) -> None:
+        self.canvas.select_entity(
+            entity_id
+        )
 
     def _update_grid(
         self,
