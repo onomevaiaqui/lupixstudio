@@ -50,8 +50,13 @@ class MainWindow(QMainWindow):
         self.recent_projects = RecentProjectsManager()
         self.scene_serializer = SceneSerializer()
 
-        self.setWindowTitle("Lupix Studio")
-        self.resize(1440, 900)
+        self.setWindowTitle(
+            "Lupix Studio"
+        )
+        self.resize(
+            1440,
+            900,
+        )
 
         self._create_menu()
         self._create_workspace()
@@ -63,12 +68,24 @@ class MainWindow(QMainWindow):
         self._refresh_recent_projects()
 
     def _create_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("Arquivo")
-        edit_menu = self.menuBar().addMenu("Editar")
-        project_menu = self.menuBar().addMenu("Projeto")
-        scene_menu = self.menuBar().addMenu("Cena")
-        assets_menu = self.menuBar().addMenu("Assets")
-        help_menu = self.menuBar().addMenu("Ajuda")
+        file_menu = self.menuBar().addMenu(
+            "Arquivo"
+        )
+        edit_menu = self.menuBar().addMenu(
+            "Editar"
+        )
+        project_menu = self.menuBar().addMenu(
+            "Projeto"
+        )
+        scene_menu = self.menuBar().addMenu(
+            "Cena"
+        )
+        assets_menu = self.menuBar().addMenu(
+            "Assets"
+        )
+        help_menu = self.menuBar().addMenu(
+            "Ajuda"
+        )
 
         new_project_action = QAction(
             "Novo Projeto",
@@ -233,17 +250,14 @@ class MainWindow(QMainWindow):
         self.left_stack = QStackedWidget()
 
         self.project_tree = ProjectTree()
-
         self.project_tree.itemDoubleClicked.connect(
             self._on_project_item_double_clicked
         )
 
         self.scene_tree = SceneTree()
-
         self.scene_tree.entity_selected.connect(
             self._on_scene_tree_entity_selected
         )
-
         self.scene_tree.scene_changed.connect(
             self._on_scene_changed
         )
@@ -251,7 +265,6 @@ class MainWindow(QMainWindow):
         self.left_stack.addWidget(
             self.project_tree
         )
-
         self.left_stack.addWidget(
             self.scene_tree
         )
@@ -350,7 +363,6 @@ class MainWindow(QMainWindow):
         dock.setWidget(
             tabs
         )
-
         dock.setMinimumHeight(
             180
         )
@@ -462,7 +474,6 @@ class MainWindow(QMainWindow):
                 "Erro ao abrir projeto",
                 str(error),
             )
-
             self._refresh_recent_projects()
             return
 
@@ -481,7 +492,6 @@ class MainWindow(QMainWindow):
         self.recent_projects.add(
             project.root
         )
-
         self._refresh_recent_projects()
 
         self.project_tree.load_project(
@@ -492,18 +502,18 @@ class MainWindow(QMainWindow):
             project.root
         )
 
-        self.asset_inspector.clear_asset()
-        self.entity_inspector.clear_entity()
-
         self.scene_tree.set_scene(
             None
         )
 
-        self._show_project_hierarchy()
+        self.asset_inspector.clear_asset()
+        self.entity_inspector.clear_entity()
 
         self.inspector_stack.setCurrentWidget(
             self.asset_inspector
         )
+
+        self._show_project_hierarchy()
 
         self.workspace.show_project(
             project.name
@@ -541,10 +551,20 @@ class MainWindow(QMainWindow):
         if not dialog.exec():
             return
 
+        name = dialog.scene_name()
+
+        if not name:
+            QMessageBox.warning(
+                self,
+                "Nova Cena",
+                "Informe um nome para a cena.",
+            )
+            return
+
         try:
             path = create_scene(
                 project_root=self.current_project.root,
-                name=dialog.scene_name(),
+                name=name,
                 width=dialog.scene_width(),
                 height=dialog.scene_height(),
             )
@@ -603,6 +623,10 @@ class MainWindow(QMainWindow):
             f"Cena aberta: {resource.name}"
         )
 
+        self.console.append(
+            f"Cena aberta: {self.current_scene_path}"
+        )
+
         if self.current_project is not None:
             self.setWindowTitle(
                 f"{resource.name} - "
@@ -655,10 +679,10 @@ class MainWindow(QMainWindow):
             str(value)
         )
 
-        if (
-            path.is_file()
-            and path.suffix.lower() == ".scene"
-        ):
+        if not path.is_file():
+            return
+
+        if path.suffix.lower() == ".scene":
             self._open_scene_file(
                 path
             )
@@ -675,6 +699,14 @@ class MainWindow(QMainWindow):
 
         self.workspace.show_project(
             self.current_project.name
+        )
+
+        self.setWindowTitle(
+            f"{self.current_project.name} - Lupix Studio"
+        )
+
+        self.statusBar().showMessage(
+            "Visualização do projeto"
         )
 
     def _show_project_hierarchy(self) -> None:
@@ -700,6 +732,7 @@ class MainWindow(QMainWindow):
             return
 
         self.workspace.scene_viewport.refresh_entities()
+
         self._save_current_scene()
 
     def _save_current_scene(self) -> None:
@@ -721,8 +754,13 @@ class MainWindow(QMainWindow):
                 "Erro ao salvar cena",
                 str(error),
             )
+            return
 
-    def _on_scene_tree_entity_selected(
+        self.statusBar().showMessage(
+            f"Cena salva: {self.current_scene.name}"
+        )
+
+    def _show_entity_in_inspector(
         self,
         entity_id: str,
     ) -> None:
@@ -734,43 +772,46 @@ class MainWindow(QMainWindow):
         )
 
         if entity is None:
+            self.entity_inspector.clear_entity()
             return
 
-        self.workspace.scene_viewport.select_entity(
-            entity_id
+        self.inspector_stack.setCurrentWidget(
+            self.entity_inspector
         )
 
         self.entity_inspector.show_entity(
             entity
         )
 
-        self.inspector_stack.setCurrentWidget(
-            self.entity_inspector
+    def _on_scene_tree_entity_selected(
+        self,
+        entity_id: str,
+    ) -> None:
+        self.workspace.scene_viewport.select_entity(
+            entity_id
+        )
+
+        self._show_entity_in_inspector(
+            entity_id
         )
 
     def _on_viewport_entity_selected(
         self,
         entity_id: str,
     ) -> None:
-        if self.current_scene is None:
-            return
-
         self.scene_tree.select_entity(
             entity_id
         )
 
-        entity = self.current_scene.entity(
+        self._show_entity_in_inspector(
             entity_id
         )
-
-        if entity is not None:
-            self.entity_inspector.show_entity(
-                entity
-            )
 
     def _on_viewport_entity_moved(
         self,
         entity_id: str,
+        x: float,
+        y: float,
     ) -> None:
         if self.current_scene is None:
             return
@@ -781,6 +822,9 @@ class MainWindow(QMainWindow):
 
         if entity is None:
             return
+
+        entity.transform.x = x
+        entity.transform.y = y
 
         self.entity_inspector.show_entity(
             entity
@@ -790,14 +834,10 @@ class MainWindow(QMainWindow):
 
     def _on_entity_inspector_changed(
         self,
+        entity_id: str,
     ) -> None:
-        entity = self.entity_inspector.entity
-
-        if entity is None:
-            return
-
-        self.workspace.scene_viewport.refresh_entity(
-            entity.id
+        self.workspace.scene_viewport.update_entity(
+            entity_id
         )
 
         self._save_current_scene()
@@ -852,6 +892,23 @@ class MainWindow(QMainWindow):
             f"Asset importado: {imported.destination}"
         )
 
+        for issue in imported.issues:
+            prefix = (
+                "ERRO"
+                if issue.level == "error"
+                else "AVISO"
+            )
+
+            self.problems.append(
+                f"[{prefix}] "
+                f"{imported.destination.name}: "
+                f"{issue.message}"
+            )
+
+        self.statusBar().showMessage(
+            f"Asset importado: {imported.destination.name}"
+        )
+
     def _show_asset_in_inspector(
         self,
         path: Path,
@@ -865,14 +922,15 @@ class MainWindow(QMainWindow):
         )
 
         if record is None:
+            self.asset_inspector.clear_asset()
             return
-
-        self.asset_inspector.show_record(
-            record
-        )
 
         self.inspector_stack.setCurrentWidget(
             self.asset_inspector
+        )
+
+        self.asset_inspector.show_record(
+            record
         )
 
     def _activate_asset(
@@ -898,6 +956,11 @@ class MainWindow(QMainWindow):
                 self.current_project.root,
                 record,
             )
+
+            self.statusBar().showMessage(
+                f"TileSet aberto: {record.name}"
+            )
+
             return
 
         dialog = AssetPreviewDialog(
@@ -907,12 +970,13 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
-    def _validate_current_project(
-        self,
-    ) -> None:
+    def _validate_current_project(self) -> None:
         self.problems.clear()
 
         if self.current_project is None:
+            self.problems.append(
+                "Nenhum projeto aberto."
+            )
             return
 
         issues = validate_project(
@@ -923,6 +987,11 @@ class MainWindow(QMainWindow):
             self.problems.append(
                 "Projeto válido para desenvolvimento Lupi."
             )
+
+            self.statusBar().showMessage(
+                "Projeto válido"
+            )
+
             return
 
         for issue in issues:
@@ -936,9 +1005,7 @@ class MainWindow(QMainWindow):
                 f"[{prefix}] {issue.message}"
             )
 
-    def _refresh_recent_projects(
-        self,
-    ) -> None:
+    def _refresh_recent_projects(self) -> None:
         projects = self.recent_projects.load()
 
         self.workspace.start_page.set_recent_projects(

@@ -15,108 +15,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lupix_studio.scene.model import SceneEntity, SceneResource
-
-
-class SceneEntityItem(QGraphicsEllipseItem):
-    """Representação visual temporária de uma entidade."""
-
-    def __init__(
-        self,
-        entity: SceneEntity,
-    ) -> None:
-        radius = 5
-
-        super().__init__(
-            -radius,
-            -radius,
-            radius * 2,
-            radius * 2,
-        )
-
-        self.entity = entity
-
-        self.setBrush(
-            QColor("#d5b85a")
-        )
-
-        self.setPen(
-            QPen(
-                QColor("#f4df8c"),
-                1,
-            )
-        )
-
-        self.setFlag(
-            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
-            True,
-        )
-
-        self.setFlag(
-            QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
-            True,
-        )
-
-        self.setFlag(
-            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges,
-            True,
-        )
-
-        self.setData(
-            0,
-            entity.id,
-        )
-
-        self.sync_from_entity()
-
-    def sync_from_entity(
-        self,
-    ) -> None:
-        self.setPos(
-            self.entity.transform.x,
-            self.entity.transform.y,
-        )
-
-        self.setRotation(
-            self.entity.transform.rotation
-        )
-
-        self.setScale(
-            self.entity.transform.scale_x
-        )
-
-    def itemChange(
-        self,
-        change,
-        value,
-    ):
-        result = super().itemChange(
-            change,
-            value,
-        )
-
-        if (
-            change
-            == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
-        ):
-            position = self.pos()
-
-            self.entity.transform.x = (
-                position.x()
-            )
-
-            self.entity.transform.y = (
-                position.y()
-            )
-
-        return result
+from lupix_studio.scene.model import (
+    SceneEntity,
+    SceneResource,
+)
 
 
 class SceneCanvas(QGraphicsView):
-    """Viewport visual de uma Scene Lupix."""
+    """Viewport visual e interativo de uma Scene Lupix."""
 
     entity_selected = Signal(str)
-    entity_moved = Signal(str)
+    entity_moved = Signal(str, float, float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -124,7 +33,6 @@ class SceneCanvas(QGraphicsView):
         self.graphics_scene = QGraphicsScene(
             self
         )
-
         self.setScene(
             self.graphics_scene
         )
@@ -139,7 +47,7 @@ class SceneCanvas(QGraphicsView):
 
         self.entity_items: dict[
             str,
-            SceneEntityItem,
+            QGraphicsEllipseItem,
         ] = {}
 
         self.setBackgroundBrush(
@@ -243,14 +151,8 @@ class SceneCanvas(QGraphicsView):
             factor,
         )
 
-    def rebuild_entities(
-        self,
-    ) -> None:
-        selected_ids = {
-            str(item.data(0))
-            for item in self.graphics_scene.selectedItems()
-            if item.data(0)
-        }
+    def rebuild_entities(self) -> None:
+        selected_id = self.selected_entity_id()
 
         self._remove_entity_items()
 
@@ -258,47 +160,140 @@ class SceneCanvas(QGraphicsView):
             return
 
         for entity in self.resource.entities:
-            item = SceneEntityItem(
+            self._add_entity_item(
                 entity
             )
 
-            self.graphics_scene.addItem(
-                item
+        if selected_id is not None:
+            self.select_entity(
+                selected_id
             )
 
-            self.entity_items[
-                entity.id
-            ] = item
-
-            if entity.id in selected_ids:
-                item.setSelected(
-                    True
-                )
-
-    def refresh_entity(
+    def update_entity(
         self,
         entity_id: str,
     ) -> None:
+        if self.resource is None:
+            return
+
+        entity = self.resource.entity(
+            entity_id
+        )
+
         item = self.entity_items.get(
             entity_id
         )
 
-        if item is None:
+        if (
+            entity is None
+            or item is None
+        ):
             return
 
-        item.sync_from_entity()
+        item.setPos(
+            entity.transform.x,
+            entity.transform.y,
+        )
 
-        self.viewport().update()
+        item.setRotation(
+            entity.transform.rotation
+        )
 
-    def _remove_entity_items(
+        item.setScale(
+            entity.transform.scale_x
+        )
+
+    def selected_entity_id(
         self,
-    ) -> None:
+    ) -> str | None:
+        selected = (
+            self.graphics_scene.selectedItems()
+        )
+
+        if not selected:
+            return None
+
+        value = selected[0].data(
+            0
+        )
+
+        if not value:
+            return None
+
+        return str(value)
+
+    def _remove_entity_items(self) -> None:
         for item in self.entity_items.values():
             self.graphics_scene.removeItem(
                 item
             )
 
         self.entity_items.clear()
+
+    def _add_entity_item(
+        self,
+        entity: SceneEntity,
+    ) -> None:
+        radius = 6
+
+        item = QGraphicsEllipseItem(
+            -radius,
+            -radius,
+            radius * 2,
+            radius * 2,
+        )
+
+        item.setBrush(
+            QColor("#d5b85a")
+        )
+
+        item.setPen(
+            QPen(
+                QColor("#f4df8c"),
+                1,
+            )
+        )
+
+        item.setPos(
+            entity.transform.x,
+            entity.transform.y,
+        )
+
+        item.setRotation(
+            entity.transform.rotation
+        )
+
+        item.setScale(
+            entity.transform.scale_x
+        )
+
+        item.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
+            True,
+        )
+
+        item.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
+            True,
+        )
+
+        item.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges,
+            True,
+        )
+
+        item.setData(
+            0,
+            entity.id,
+        )
+
+        self.graphics_scene.addItem(
+            item
+        )
+
+        self.entity_items[
+            entity.id
+        ] = item
 
     def select_entity(
         self,
@@ -311,12 +306,21 @@ class SceneCanvas(QGraphicsView):
         if item is None:
             return
 
+        if (
+            item.isSelected()
+            and len(
+                self.graphics_scene.selectedItems()
+            ) == 1
+        ):
+            return
+
         self.graphics_scene.blockSignals(
             True
         )
 
         try:
             self.graphics_scene.clearSelection()
+
             item.setSelected(
                 True
             )
@@ -334,13 +338,15 @@ class SceneCanvas(QGraphicsView):
         self,
         event,
     ) -> None:
-        selected_before = (
-            self.graphics_scene.selectedItems()
-        )
-
         super().mouseReleaseEvent(
             event
         )
+
+        if (
+            event.button()
+            != Qt.MouseButton.LeftButton
+        ):
+            return
 
         selected = (
             self.graphics_scene.selectedItems()
@@ -351,43 +357,32 @@ class SceneCanvas(QGraphicsView):
 
         item = selected[0]
 
-        if not isinstance(
-            item,
-            SceneEntityItem,
-        ):
+        entity_id = item.data(
+            0
+        )
+
+        if not entity_id:
             return
 
-        if (
-            event.button()
-            == Qt.MouseButton.LeftButton
-        ):
-            self.entity_moved.emit(
-                item.entity.id
-            )
+        position = item.pos()
 
-        if selected_before != selected:
-            self.entity_selected.emit(
-                item.entity.id
-            )
+        self.entity_moved.emit(
+            str(entity_id),
+            position.x(),
+            position.y(),
+        )
 
     def _on_graphics_selection_changed(
         self,
     ) -> None:
-        selected = (
-            self.graphics_scene.selectedItems()
-        )
+        entity_id = self.selected_entity_id()
 
-        if not selected:
+        if entity_id is None:
             return
 
-        entity_id = selected[0].data(
-            0
+        self.entity_selected.emit(
+            entity_id
         )
-
-        if entity_id:
-            self.entity_selected.emit(
-                str(entity_id)
-            )
 
     def drawBackground(
         self,
@@ -463,7 +458,10 @@ class SceneCanvas(QGraphicsView):
 
         while x <= self.scene_width:
             painter.drawLine(
-                QPointF(x, 0),
+                QPointF(
+                    x,
+                    0,
+                ),
                 QPointF(
                     x,
                     self.scene_height,
@@ -476,7 +474,10 @@ class SceneCanvas(QGraphicsView):
 
         while y <= self.scene_height:
             painter.drawLine(
-                QPointF(0, y),
+                QPointF(
+                    0,
+                    y,
+                ),
                 QPointF(
                     self.scene_width,
                     y,
@@ -525,7 +526,7 @@ class SceneViewport(QWidget):
     """Editor visual básico de uma Scene."""
 
     entity_selected = Signal(str)
-    entity_moved = Signal(str)
+    entity_moved = Signal(str, float, float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -536,11 +537,14 @@ class SceneViewport(QWidget):
             "Nenhuma cena aberta"
         )
 
-        self.resolution_label = QLabel("-")
+        self.resolution_label = QLabel(
+            "-"
+        )
 
         self.grid_checkbox = QCheckBox(
             "Grade"
         )
+
         self.grid_checkbox.setChecked(
             True
         )
@@ -675,18 +679,8 @@ class SceneViewport(QWidget):
         self._update_grid()
         self._update_zoom()
 
-    def refresh_entities(
-        self,
-    ) -> None:
+    def refresh_entities(self) -> None:
         self.canvas.rebuild_entities()
-
-    def refresh_entity(
-        self,
-        entity_id: str,
-    ) -> None:
-        self.canvas.refresh_entity(
-            entity_id
-        )
 
     def select_entity(
         self,
@@ -696,9 +690,15 @@ class SceneViewport(QWidget):
             entity_id
         )
 
-    def _update_grid(
+    def update_entity(
         self,
+        entity_id: str,
     ) -> None:
+        self.canvas.update_entity(
+            entity_id
+        )
+
+    def _update_grid(self) -> None:
         size = int(
             self.grid_combo.currentData()
         )
@@ -707,9 +707,7 @@ class SceneViewport(QWidget):
             size
         )
 
-    def _update_zoom(
-        self,
-    ) -> None:
+    def _update_zoom(self) -> None:
         factor = float(
             self.zoom_combo.currentData()
         )
