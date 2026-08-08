@@ -16,8 +16,6 @@ from lupix_studio.ui.tileset_editor import TileSetEditor
 
 
 class ProjectPage(QWidget):
-    """Área principal de um projeto aberto."""
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -41,7 +39,9 @@ class ProjectPage(QWidget):
             Qt.AlignmentFlag.AlignCenter
         )
 
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.addStretch()
         layout.addWidget(
@@ -60,14 +60,8 @@ class ProjectPage(QWidget):
             name
         )
 
-        self.subtitle.setText(
-            "Nenhuma cena aberta"
-        )
-
 
 class WorkspaceWidget(QWidget):
-    """Área central da IDE."""
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -111,9 +105,7 @@ class WorkspaceWidget(QWidget):
 
         self.show_start_page()
 
-    def show_start_page(
-        self,
-    ) -> None:
+    def show_start_page(self) -> None:
         self.stack.setCurrentWidget(
             self.start_page
         )
@@ -132,13 +124,12 @@ class WorkspaceWidget(QWidget):
 
     def show_scene(
         self,
-        path: Path,
+        project_root: Path,
         resource: SceneResource,
     ) -> None:
-        del path
-
         self.scene_viewport.open_scene(
-            resource
+            project_root,
+            resource,
         )
 
         self.stack.setCurrentWidget(

@@ -8,9 +8,7 @@ from uuid import uuid4
 class Transform2D:
     x: float = 0.0
     y: float = 0.0
-
     rotation: float = 0.0
-
     scale_x: float = 1.0
     scale_y: float = 1.0
 
@@ -51,6 +49,48 @@ class Transform2D:
 
 
 @dataclass(slots=True)
+class SpriteComponent:
+    asset_id: str = ""
+    opacity: float = 1.0
+    flip_x: bool = False
+    flip_y: bool = False
+    layer: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "asset_id": self.asset_id,
+            "opacity": self.opacity,
+            "flip_x": self.flip_x,
+            "flip_y": self.flip_y,
+            "layer": self.layer,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> SpriteComponent:
+        return cls(
+            asset_id=str(
+                data.get("asset_id")
+                or ""
+            ),
+            opacity=float(
+                data.get("opacity", 1.0)
+            ),
+            flip_x=bool(
+                data.get("flip_x", False)
+            ),
+            flip_y=bool(
+                data.get("flip_y", False)
+            ),
+            layer=int(
+                data.get("layer", 0)
+            ),
+        )
+
+
+@dataclass(slots=True)
 class SceneEntity:
     name: str
 
@@ -64,13 +104,20 @@ class SceneEntity:
         default_factory=Transform2D
     )
 
+    sprite: SpriteComponent | None = None
+
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "id": self.id,
             "name": self.name,
             "kind": self.kind,
             "transform": self.transform.to_dict(),
         }
+
+        if self.sprite is not None:
+            data["sprite"] = self.sprite.to_dict()
+
+        return data
 
     @classmethod
     def from_dict(
@@ -88,6 +135,20 @@ class SceneEntity:
         ):
             transform_data = {}
 
+        sprite_data = data.get(
+            "sprite"
+        )
+
+        sprite = None
+
+        if isinstance(
+            sprite_data,
+            dict,
+        ):
+            sprite = SpriteComponent.from_dict(
+                sprite_data
+            )
+
         return cls(
             id=str(
                 data.get("id")
@@ -104,13 +165,13 @@ class SceneEntity:
             transform=Transform2D.from_dict(
                 transform_data
             ),
+            sprite=sprite,
         )
 
 
 @dataclass(slots=True)
 class SceneResource:
     name: str
-
     width: int = 480
     height: int = 270
 
@@ -118,7 +179,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 1
+    format: int = 2
     type: str = "scene"
 
     def add_entity(
