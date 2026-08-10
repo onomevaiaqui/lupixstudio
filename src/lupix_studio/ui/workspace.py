@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
     QStackedWidget,
@@ -45,15 +45,12 @@ class ProjectPage(QWidget):
         )
 
         layout.addStretch()
-
         layout.addWidget(
             self.title
         )
-
         layout.addWidget(
             self.subtitle
         )
-
         layout.addStretch()
 
     def set_project_name(
@@ -66,6 +63,8 @@ class ProjectPage(QWidget):
 
 
 class WorkspaceWidget(QWidget):
+    tilemap_back_requested = Signal()
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -110,6 +109,10 @@ class WorkspaceWidget(QWidget):
 
         layout.addWidget(
             self.stack
+        )
+
+        self.tilemap_editor.back_requested.connect(
+            self.tilemap_back_requested.emit
         )
 
         self.show_start_page()

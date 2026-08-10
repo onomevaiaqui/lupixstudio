@@ -53,8 +53,14 @@ class MainWindow(QMainWindow):
         self.recent_projects = RecentProjectsManager()
         self.scene_serializer = SceneSerializer()
 
-        self.setWindowTitle("Lupix Studio")
-        self.resize(1440, 900)
+        self.setWindowTitle(
+            "Lupix Studio"
+        )
+
+        self.resize(
+            1440,
+            900,
+        )
 
         self._create_menu()
         self._create_workspace()
@@ -275,6 +281,10 @@ class MainWindow(QMainWindow):
             self._on_viewport_entity_moved
         )
 
+        self.workspace.tilemap_back_requested.connect(
+            self._on_tilemap_back_requested
+        )
+
         self.setCentralWidget(
             self.workspace
         )
@@ -407,6 +417,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
 
         self.console = QTextEdit()
+
         self.console.setReadOnly(
             True
         )
@@ -416,6 +427,7 @@ class MainWindow(QMainWindow):
         )
 
         self.problems = QTextEdit()
+
         self.problems.setReadOnly(
             True
         )
@@ -1131,6 +1143,40 @@ class MainWindow(QMainWindow):
 
         self.console.append(
             f"TileMap aberto: {resource_path}"
+        )
+
+    def _on_tilemap_back_requested(
+        self,
+    ) -> None:
+        if (
+            self.current_project is None
+            or self.current_scene is None
+        ):
+            return
+
+        self.workspace.show_scene(
+            self.current_project.root,
+            self.current_scene,
+        )
+
+        self._show_scene_hierarchy()
+
+        self.inspector_stack.setCurrentWidget(
+            self.entity_tabs
+        )
+
+        self.statusBar().showMessage(
+            f"Cena aberta: {self.current_scene.name}"
+        )
+
+        self.console.append(
+            "Retorno do TileMap Editor para a cena."
+        )
+
+        self.setWindowTitle(
+            f"{self.current_scene.name} - "
+            f"{self.current_project.name} - "
+            "Lupix Studio"
         )
 
     def _import_png(

@@ -158,7 +158,6 @@ class TilePaletteCanvas(QGraphicsView):
             return
 
         self.selected_tile = tile_id
-
         self.viewport().update()
 
     def mousePressEvent(
@@ -1114,6 +1113,8 @@ class TileMapCanvas(QGraphicsView):
 class TileMapEditor(QWidget):
     """Editor visual de TileMaps."""
 
+    back_requested = Signal()
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -1125,6 +1126,10 @@ class TileMapEditor(QWidget):
         self.tileset_serializer = TileSetSerializer()
 
         self.selected_tile_id: int | None = None
+
+        self.back_button = QPushButton(
+            "← Voltar para Cena"
+        )
 
         self.title = QLabel(
             "Nenhum TileMap aberto"
@@ -1232,6 +1237,22 @@ class TileMapEditor(QWidget):
             self.tileset_combo,
         )
 
+        header = QHBoxLayout()
+
+        header.addWidget(
+            self.back_button
+        )
+
+        header.addSpacing(
+            12
+        )
+
+        header.addWidget(
+            self.title
+        )
+
+        header.addStretch()
+
         tools = QHBoxLayout()
 
         tools.addWidget(
@@ -1314,8 +1335,8 @@ class TileMapEditor(QWidget):
             right_panel
         )
 
-        right_layout.addWidget(
-            self.title
+        right_layout.addLayout(
+            header
         )
 
         right_layout.addWidget(
@@ -1381,6 +1402,10 @@ class TileMapEditor(QWidget):
 
         layout.addWidget(
             splitter
+        )
+
+        self.back_button.clicked.connect(
+            self._request_back
         )
 
         self.tileset_combo.currentIndexChanged.connect(
@@ -1490,6 +1515,11 @@ class TileMapEditor(QWidget):
         )
 
         self._update_zoom()
+
+    def _request_back(self) -> None:
+        self.save_resource()
+
+        self.back_requested.emit()
 
     def _load_tilesets(self) -> None:
         self.tileset_combo.blockSignals(
