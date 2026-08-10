@@ -1107,14 +1107,30 @@ class MainWindow(QMainWindow):
         ):
             return
 
+        resource_path = (
+            self.current_project.root
+            / entity.tilemap.resource_path
+        )
+
+        if not resource_path.exists():
+            QMessageBox.warning(
+                self,
+                "TileMap",
+                "O recurso TileMap não foi encontrado.",
+            )
+            return
+
+        self.workspace.show_tilemap(
+            self.current_project.root,
+            resource_path,
+        )
+
         self.statusBar().showMessage(
-            "TileMap pronto para edição: "
-            f"{entity.tilemap.resource_path}"
+            f"TileMap aberto: {resource_path.name}"
         )
 
         self.console.append(
-            "Solicitada edição do TileMap: "
-            f"{entity.tilemap.resource_path}"
+            f"TileMap aberto: {resource_path}"
         )
 
     def _import_png(

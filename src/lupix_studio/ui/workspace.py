@@ -12,6 +12,7 @@ from lupix_studio.assets.registry import AssetRecord
 from lupix_studio.scene.model import SceneResource
 from lupix_studio.ui.scene_viewport import SceneViewport
 from lupix_studio.ui.start_page import StartPage
+from lupix_studio.ui.tilemap_editor import TileMapEditor
 from lupix_studio.ui.tileset_editor import TileSetEditor
 
 
@@ -44,12 +45,15 @@ class ProjectPage(QWidget):
         )
 
         layout.addStretch()
+
         layout.addWidget(
             self.title
         )
+
         layout.addWidget(
             self.subtitle
         )
+
         layout.addStretch()
 
     def set_project_name(
@@ -71,6 +75,7 @@ class WorkspaceWidget(QWidget):
         self.project_page = ProjectPage()
         self.scene_viewport = SceneViewport()
         self.tileset_editor = TileSetEditor()
+        self.tilemap_editor = TileMapEditor()
 
         self.stack.addWidget(
             self.start_page
@@ -86,6 +91,10 @@ class WorkspaceWidget(QWidget):
 
         self.stack.addWidget(
             self.tileset_editor
+        )
+
+        self.stack.addWidget(
+            self.tilemap_editor
         )
 
         layout = QVBoxLayout(
@@ -105,7 +114,9 @@ class WorkspaceWidget(QWidget):
 
         self.show_start_page()
 
-    def show_start_page(self) -> None:
+    def show_start_page(
+        self,
+    ) -> None:
         self.stack.setCurrentWidget(
             self.start_page
         )
@@ -148,4 +159,18 @@ class WorkspaceWidget(QWidget):
 
         self.stack.setCurrentWidget(
             self.tileset_editor
+        )
+
+    def show_tilemap(
+        self,
+        project_root: Path,
+        resource_path: Path,
+    ) -> None:
+        self.tilemap_editor.open_tilemap(
+            project_root,
+            resource_path,
+        )
+
+        self.stack.setCurrentWidget(
+            self.tilemap_editor
         )
