@@ -31,6 +31,7 @@ from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
 )
+from lupix_studio.tilemap.serializer import TileMapSerializer
 
 
 class SceneCanvas(QGraphicsView):
@@ -81,6 +82,11 @@ class SceneCanvas(QGraphicsView):
             QGraphicsView.ViewportAnchor.AnchorViewCenter
         )
 
+        self.setRenderHint(
+            QPainter.RenderHint.SmoothPixmapTransform,
+            False,
+        )
+
         self.graphics_scene.selectionChanged.connect(
             self._on_graphics_selection_changed
         )
@@ -124,8 +130,10 @@ class SceneCanvas(QGraphicsView):
             QRectF(
                 -margin,
                 -margin,
-                self.scene_width + margin * 2,
-                self.scene_height + margin * 2,
+                self.scene_width
+                + margin * 2,
+                self.scene_height
+                + margin * 2,
             )
         )
 
@@ -136,6 +144,7 @@ class SceneCanvas(QGraphicsView):
         visible: bool,
     ) -> None:
         self.grid_visible = visible
+
         self.viewport().update()
 
     def set_grid_size(
@@ -229,6 +238,17 @@ class SceneCanvas(QGraphicsView):
 
         has_visual = False
 
+        tilemap_item = self._create_tilemap_item(
+            entity
+        )
+
+        if tilemap_item is not None:
+            group.addToGroup(
+                tilemap_item
+            )
+
+            has_visual = True
+
         sprite_item = self._create_sprite_item(
             entity
         )
@@ -237,6 +257,7 @@ class SceneCanvas(QGraphicsView):
             group.addToGroup(
                 sprite_item
             )
+
             has_visual = True
 
         camera_item = self._create_camera_item(
@@ -247,6 +268,7 @@ class SceneCanvas(QGraphicsView):
             group.addToGroup(
                 camera_item
             )
+
             has_visual = True
 
         if not has_visual:
@@ -259,6 +281,213 @@ class SceneCanvas(QGraphicsView):
             )
 
         return group
+
+    def _create_tilemap_item(
+        self,
+        entity: SceneEntity,
+    ) -> QGraphicsPixmapItem | None:
+        if (
+            entity.tilemap is None
+            or not entity.tilemap.resource_path
+            or self.project_root is None
+        ):
+            return None
+
+        resource_path = (
+            self.project_root
+            / entity.tilemap.resource_path
+        )
+
+        if not resource_path.exists():
+            return None
+
+        try:
+            tilemap = TileMapSerializer().load(
+                resource_path
+            )
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            return None
+
+        if not tilemap.tileset_asset_id:
+            return None
+
+        registry = AssetRegistry(
+            self.project_root
+        )
+
+        record = registry.find_by_id(
+            tilemap.tileset_asset_id
+        )
+
+        if record is None:
+            return None
+
+        texture_path = (
+            self.project_root
+            / record.path
+        )
+
+        source = QPixmap(
+            str(texture_path)
+        )
+
+        if source.isNull():
+            return None
+
+        output_width = (
+            tilemap.width
+            * tilemap.tile_width
+        )
+
+        output_height = (
+            tilemap.height
+            * tilemap.tile_height
+        )
+
+        if (
+            output_width <= 0
+            or output_height <= 0
+        ):
+            return None
+
+        output = QPixmap(
+            output_width,
+            output_height,
+        )
+
+        output.fill(
+            Qt.GlobalColor.transparent
+        )
+
+        painter = QPainter(
+            output
+        )
+
+        painter.setRenderHint(
+            QPainter.RenderHint.SmoothPixmapTransform,
+            False,
+        )
+
+        columns = max(
+            1,
+            source.width()
+            // tilemap.tile_width,
+        )
+
+        for layer in tilemap.layers:
+            if not layer.visible:
+                continue
+
+            painter.save()
+
+            painter.setOpacity(
+                max(
+                    0.0,
+                    min(
+                        1.0,
+                        layer.opacity,
+                    ),
+                )
+            )
+
+            for key, tile_id in layer.cells.items():
+                try:
+                    column_text, row_text = key.split(
+                        ",",
+                        maxsplit=1,
+                    )
+
+                    column = int(
+                        column_text
+                    )
+
+                    row = int(
+                        row_text
+                    )
+
+                except (
+                    ValueError,
+                    AttributeError,
+                ):
+                    continue
+
+                if (
+                    column < 0
+                    or row < 0
+                    or column >= tilemap.width
+                    or row >= tilemap.height
+                ):
+                    continue
+
+                source_column = (
+                    tile_id
+                    % columns
+                )
+
+                source_row = (
+                    tile_id
+                    // columns
+                )
+
+                source_rect = QRectF(
+                    source_column
+                    * tilemap.tile_width,
+                    source_row
+                    * tilemap.tile_height,
+                    tilemap.tile_width,
+                    tilemap.tile_height,
+                )
+
+                target_rect = QRectF(
+                    column
+                    * tilemap.tile_width,
+                    row
+                    * tilemap.tile_height,
+                    tilemap.tile_width,
+                    tilemap.tile_height,
+                )
+
+                painter.drawPixmap(
+                    target_rect,
+                    source,
+                    source_rect,
+                )
+
+            painter.restore()
+
+        painter.end()
+
+        item = QGraphicsPixmapItem(
+            output
+        )
+
+        # TileMap usa origem no canto superior esquerdo.
+        item.setOffset(
+            0,
+            0,
+        )
+
+        item.setZValue(
+            -10000
+        )
+
+        transform = QTransform()
+
+        transform.scale(
+            entity.transform.scale_x,
+            entity.transform.scale_y,
+        )
+
+        item.setTransform(
+            transform
+        )
+
+        return item
 
     def _create_sprite_item(
         self,
@@ -493,7 +722,9 @@ class SceneCanvas(QGraphicsView):
         if not value:
             return None
 
-        return str(value)
+        return str(
+            value
+        )
 
     def select_entity(
         self,
