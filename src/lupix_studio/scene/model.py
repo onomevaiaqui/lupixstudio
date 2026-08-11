@@ -226,6 +226,89 @@ class TileMapComponent:
 
 
 @dataclass(slots=True)
+class ColliderComponent:
+    enabled: bool = True
+    width: float = 16.0
+    height: float = 16.0
+    offset_x: float = 0.0
+    offset_y: float = 0.0
+    solid: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "enabled": self.enabled,
+            "width": self.width,
+            "height": self.height,
+            "offset": {
+                "x": self.offset_x,
+                "y": self.offset_y,
+            },
+            "solid": self.solid,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> ColliderComponent:
+        offset = data.get(
+            "offset",
+            {},
+        )
+
+        if not isinstance(
+            offset,
+            dict,
+        ):
+            offset = {}
+
+        return cls(
+            enabled=bool(
+                data.get(
+                    "enabled",
+                    True,
+                )
+            ),
+            width=max(
+                0.01,
+                float(
+                    data.get(
+                        "width",
+                        16.0,
+                    )
+                ),
+            ),
+            height=max(
+                0.01,
+                float(
+                    data.get(
+                        "height",
+                        16.0,
+                    )
+                ),
+            ),
+            offset_x=float(
+                offset.get(
+                    "x",
+                    0.0,
+                )
+            ),
+            offset_y=float(
+                offset.get(
+                    "y",
+                    0.0,
+                )
+            ),
+            solid=bool(
+                data.get(
+                    "solid",
+                    True,
+                )
+            ),
+        )
+
+
+@dataclass(slots=True)
 class SceneEntity:
     name: str
 
@@ -242,6 +325,7 @@ class SceneEntity:
     sprite: SpriteComponent | None = None
     camera: CameraComponent | None = None
     tilemap: TileMapComponent | None = None
+    collider: ColliderComponent | None = None
 
     def refresh_kind(self) -> None:
         if self.tilemap is not None:
@@ -254,6 +338,10 @@ class SceneEntity:
 
         if self.sprite is not None:
             self.kind = "sprite"
+            return
+
+        if self.collider is not None:
+            self.kind = "collider"
             return
 
         self.kind = "empty"
@@ -279,6 +367,11 @@ class SceneEntity:
         if self.tilemap is not None:
             data["tilemap"] = (
                 self.tilemap.to_dict()
+            )
+
+        if self.collider is not None:
+            data["collider"] = (
+                self.collider.to_dict()
             )
 
         return data
@@ -311,38 +404,45 @@ class SceneEntity:
             "tilemap"
         )
 
+        collider_data = data.get(
+            "collider"
+        )
+
         sprite: SpriteComponent | None = None
         camera: CameraComponent | None = None
         tilemap: TileMapComponent | None = None
+        collider: ColliderComponent | None = None
 
         if isinstance(
             sprite_data,
             dict,
         ):
-            sprite = (
-                SpriteComponent.from_dict(
-                    sprite_data
-                )
+            sprite = SpriteComponent.from_dict(
+                sprite_data
             )
 
         if isinstance(
             camera_data,
             dict,
         ):
-            camera = (
-                CameraComponent.from_dict(
-                    camera_data
-                )
+            camera = CameraComponent.from_dict(
+                camera_data
             )
 
         if isinstance(
             tilemap_data,
             dict,
         ):
-            tilemap = (
-                TileMapComponent.from_dict(
-                    tilemap_data
-                )
+            tilemap = TileMapComponent.from_dict(
+                tilemap_data
+            )
+
+        if isinstance(
+            collider_data,
+            dict,
+        ):
+            collider = ColliderComponent.from_dict(
+                collider_data
             )
 
         entity = cls(
@@ -373,6 +473,7 @@ class SceneEntity:
             sprite=sprite,
             camera=camera,
             tilemap=tilemap,
+            collider=collider,
         )
 
         entity.refresh_kind()
@@ -390,7 +491,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 4
+    format: int = 5
     type: str = "scene"
 
     def add_entity(
@@ -409,9 +510,7 @@ class SceneResource:
             self.entities
         ):
             if entity.id == entity_id:
-                del self.entities[
-                    index
-                ]
+                del self.entities[index]
                 return True
 
         return False

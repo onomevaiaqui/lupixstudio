@@ -31,7 +31,9 @@ from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
 )
-from lupix_studio.tilemap.serializer import TileMapSerializer
+from lupix_studio.tilemap.serializer import (
+    TileMapSerializer,
+)
 
 
 class SceneCanvas(QGraphicsView):
@@ -271,6 +273,17 @@ class SceneCanvas(QGraphicsView):
 
             has_visual = True
 
+        collider_item = self._create_collider_item(
+            entity
+        )
+
+        if collider_item is not None:
+            group.addToGroup(
+                collider_item
+            )
+
+            has_visual = True
+
         if not has_visual:
             empty_item = self._create_empty_item(
                 entity
@@ -397,9 +410,11 @@ class SceneCanvas(QGraphicsView):
 
             for key, tile_id in layer.cells.items():
                 try:
-                    column_text, row_text = key.split(
-                        ",",
-                        maxsplit=1,
+                    column_text, row_text = (
+                        key.split(
+                            ",",
+                            maxsplit=1,
+                        )
                     )
 
                     column = int(
@@ -466,7 +481,6 @@ class SceneCanvas(QGraphicsView):
             output
         )
 
-        # TileMap usa origem no canto superior esquerdo.
         item.setOffset(
             0,
             0,
@@ -598,6 +612,7 @@ class SceneCanvas(QGraphicsView):
             color = QColor(
                 "#55d6be"
             )
+
         else:
             color = QColor(
                 "#4da3ff"
@@ -622,6 +637,72 @@ class SceneCanvas(QGraphicsView):
 
         item.setZValue(
             100000
+        )
+
+        return item
+
+    def _create_collider_item(
+        self,
+        entity: SceneEntity,
+    ) -> QGraphicsRectItem | None:
+        collider = entity.collider
+
+        if (
+            collider is None
+            or not collider.enabled
+        ):
+            return None
+
+        item = QGraphicsRectItem(
+            -collider.width / 2
+            + collider.offset_x,
+            -collider.height / 2
+            + collider.offset_y,
+            collider.width,
+            collider.height,
+        )
+
+        if collider.solid:
+            color = QColor(
+                "#ff5f5f"
+            )
+
+        else:
+            color = QColor(
+                "#ffd34e"
+            )
+
+        pen = QPen(
+            color,
+            1,
+        )
+
+        pen.setCosmetic(
+            True
+        )
+
+        pen.setStyle(
+            Qt.PenStyle.DashLine
+        )
+
+        item.setPen(
+            pen
+        )
+
+        fill = QColor(
+            color
+        )
+
+        fill.setAlpha(
+            30
+        )
+
+        item.setBrush(
+            fill
+        )
+
+        item.setZValue(
+            90000
         )
 
         return item
