@@ -34,6 +34,7 @@ from lupix_studio.ui.collider_component_editor import ColliderComponentEditor
 from lupix_studio.ui.entity_inspector import EntityInspector
 from lupix_studio.ui.new_project_dialog import NewProjectDialog
 from lupix_studio.ui.new_scene_dialog import NewSceneDialog
+from lupix_studio.ui.player_controller_editor import PlayerControllerEditor
 from lupix_studio.ui.project_tree import ProjectTree
 from lupix_studio.ui.scene_tree import SceneTree
 from lupix_studio.ui.sprite_component_editor import SpriteComponentEditor
@@ -67,17 +68,35 @@ class MainWindow(QMainWindow):
         self._refresh_recent_projects()
 
     def _create_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("Arquivo")
-        edit_menu = self.menuBar().addMenu("Editar")
-        project_menu = self.menuBar().addMenu("Projeto")
-        scene_menu = self.menuBar().addMenu("Cena")
-        assets_menu = self.menuBar().addMenu("Assets")
-        help_menu = self.menuBar().addMenu("Ajuda")
+        file_menu = self.menuBar().addMenu(
+            "Arquivo"
+        )
+
+        edit_menu = self.menuBar().addMenu(
+            "Editar"
+        )
+
+        project_menu = self.menuBar().addMenu(
+            "Projeto"
+        )
+
+        scene_menu = self.menuBar().addMenu(
+            "Cena"
+        )
+
+        assets_menu = self.menuBar().addMenu(
+            "Assets"
+        )
+
+        help_menu = self.menuBar().addMenu(
+            "Ajuda"
+        )
 
         new_project_action = QAction(
             "Novo Projeto",
             self,
         )
+
         new_project_action.triggered.connect(
             self._on_new_project
         )
@@ -86,6 +105,7 @@ class MainWindow(QMainWindow):
             "Abrir Projeto",
             self,
         )
+
         open_project_action.triggered.connect(
             self._on_open_project
         )
@@ -94,6 +114,7 @@ class MainWindow(QMainWindow):
             "Sair",
             self,
         )
+
         exit_action.triggered.connect(
             self.close
         )
@@ -102,6 +123,7 @@ class MainWindow(QMainWindow):
             "Validar Projeto",
             self,
         )
+
         validate_action.triggered.connect(
             self._validate_current_project
         )
@@ -110,6 +132,7 @@ class MainWindow(QMainWindow):
             "Nova Cena",
             self,
         )
+
         new_scene_action.triggered.connect(
             self._on_new_scene
         )
@@ -118,6 +141,7 @@ class MainWindow(QMainWindow):
             "Salvar Cena",
             self,
         )
+
         save_scene_action.triggered.connect(
             self._save_current_scene
         )
@@ -126,6 +150,7 @@ class MainWindow(QMainWindow):
             "Voltar ao Projeto",
             self,
         )
+
         project_view_action.triggered.connect(
             self._show_project_view
         )
@@ -134,6 +159,7 @@ class MainWindow(QMainWindow):
             "Importar PNG como Sprite",
             self,
         )
+
         import_sprite_action.triggered.connect(
             lambda: self._import_png(
                 "sprites"
@@ -144,6 +170,7 @@ class MainWindow(QMainWindow):
             "Importar PNG como TileSet",
             self,
         )
+
         import_tileset_action.triggered.connect(
             lambda: self._import_png(
                 "tilesets"
@@ -153,10 +180,13 @@ class MainWindow(QMainWindow):
         file_menu.addAction(
             new_project_action
         )
+
         file_menu.addAction(
             open_project_action
         )
+
         file_menu.addSeparator()
+
         file_menu.addAction(
             exit_action
         )
@@ -167,6 +197,7 @@ class MainWindow(QMainWindow):
                 self,
             )
         )
+
         edit_menu.addAction(
             QAction(
                 "Refazer",
@@ -177,13 +208,16 @@ class MainWindow(QMainWindow):
         project_menu.addAction(
             validate_action
         )
+
         project_menu.addSeparator()
+
         project_menu.addAction(
             QAction(
                 "Executar",
                 self,
             )
         )
+
         project_menu.addAction(
             QAction(
                 "Exportar",
@@ -194,10 +228,13 @@ class MainWindow(QMainWindow):
         scene_menu.addAction(
             new_scene_action
         )
+
         scene_menu.addAction(
             save_scene_action
         )
+
         scene_menu.addSeparator()
+
         scene_menu.addAction(
             project_view_action
         )
@@ -205,6 +242,7 @@ class MainWindow(QMainWindow):
         assets_menu.addAction(
             import_sprite_action
         )
+
         assets_menu.addAction(
             import_tileset_action
         )
@@ -303,6 +341,7 @@ class MainWindow(QMainWindow):
         self.camera_editor = CameraComponentEditor()
         self.tilemap_editor = TileMapComponentEditor()
         self.collider_editor = ColliderComponentEditor()
+        self.player_editor = PlayerControllerEditor()
 
         self.entity_tabs = QTabWidget()
 
@@ -331,6 +370,11 @@ class MainWindow(QMainWindow):
             "Collider",
         )
 
+        self.entity_tabs.addTab(
+            self.player_editor,
+            "Player",
+        )
+
         self.entity_inspector.entity_changed.connect(
             self._on_entity_inspector_changed
         )
@@ -355,6 +399,10 @@ class MainWindow(QMainWindow):
             self._on_collider_changed
         )
 
+        self.player_editor.player_changed.connect(
+            self._on_player_changed
+        )
+
         self.inspector_stack.addWidget(
             self.asset_inspector
         )
@@ -364,7 +412,7 @@ class MainWindow(QMainWindow):
         )
 
         self.inspector_dock.setMinimumWidth(
-            340
+            360
         )
 
         self.inspector_dock.setWidget(
@@ -385,14 +433,17 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
 
         self.console = QTextEdit()
+
         self.console.setReadOnly(
             True
         )
+
         self.console.setPlainText(
             "Lupix Studio pronto."
         )
 
         self.problems = QTextEdit()
+
         self.problems.setReadOnly(
             True
         )
@@ -596,6 +647,10 @@ class MainWindow(QMainWindow):
             None
         )
 
+        self.player_editor.set_context(
+            None
+        )
+
         self.inspector_stack.setCurrentWidget(
             self.asset_inspector
         )
@@ -715,6 +770,10 @@ class MainWindow(QMainWindow):
         )
 
         self.collider_editor.set_context(
+            None
+        )
+
+        self.player_editor.set_context(
             None
         )
 
@@ -906,6 +965,10 @@ class MainWindow(QMainWindow):
                 None
             )
 
+            self.player_editor.set_context(
+                None
+            )
+
             return
 
         self.inspector_stack.setCurrentWidget(
@@ -933,6 +996,10 @@ class MainWindow(QMainWindow):
         )
 
         self.collider_editor.set_context(
+            entity
+        )
+
+        self.player_editor.set_context(
             entity
         )
 
@@ -1104,6 +1171,32 @@ class MainWindow(QMainWindow):
         )
 
         self.collider_editor.set_context(
+            entity
+        )
+
+        self._save_current_scene()
+
+    def _on_player_changed(
+        self,
+        entity_id: str,
+    ) -> None:
+        if self.current_scene is None:
+            return
+
+        entity = self.current_scene.entity(
+            entity_id
+        )
+
+        if entity is None:
+            return
+
+        self.scene_tree.refresh()
+
+        self.entity_inspector.show_entity(
+            entity
+        )
+
+        self.player_editor.set_context(
             entity
         )
 

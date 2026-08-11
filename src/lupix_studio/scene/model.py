@@ -309,6 +309,88 @@ class ColliderComponent:
 
 
 @dataclass(slots=True)
+class PlayerControllerComponent:
+    enabled: bool = True
+    speed: float = 80.0
+    jump_force: float = 220.0
+    gravity: float = 600.0
+    max_fall_speed: float = 500.0
+    air_control: float = 0.75
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "enabled": self.enabled,
+            "speed": self.speed,
+            "jump_force": self.jump_force,
+            "gravity": self.gravity,
+            "max_fall_speed": self.max_fall_speed,
+            "air_control": self.air_control,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> PlayerControllerComponent:
+        return cls(
+            enabled=bool(
+                data.get(
+                    "enabled",
+                    True,
+                )
+            ),
+            speed=max(
+                0.0,
+                float(
+                    data.get(
+                        "speed",
+                        80.0,
+                    )
+                ),
+            ),
+            jump_force=max(
+                0.0,
+                float(
+                    data.get(
+                        "jump_force",
+                        220.0,
+                    )
+                ),
+            ),
+            gravity=max(
+                0.0,
+                float(
+                    data.get(
+                        "gravity",
+                        600.0,
+                    )
+                ),
+            ),
+            max_fall_speed=max(
+                0.0,
+                float(
+                    data.get(
+                        "max_fall_speed",
+                        500.0,
+                    )
+                ),
+            ),
+            air_control=max(
+                0.0,
+                min(
+                    1.0,
+                    float(
+                        data.get(
+                            "air_control",
+                            0.75,
+                        )
+                    ),
+                ),
+            ),
+        )
+
+
+@dataclass(slots=True)
 class SceneEntity:
     name: str
 
@@ -326,6 +408,7 @@ class SceneEntity:
     camera: CameraComponent | None = None
     tilemap: TileMapComponent | None = None
     collider: ColliderComponent | None = None
+    player_controller: PlayerControllerComponent | None = None
 
     def refresh_kind(self) -> None:
         if self.tilemap is not None:
@@ -342,6 +425,10 @@ class SceneEntity:
 
         if self.collider is not None:
             self.kind = "collider"
+            return
+
+        if self.player_controller is not None:
+            self.kind = "player"
             return
 
         self.kind = "empty"
@@ -372,6 +459,11 @@ class SceneEntity:
         if self.collider is not None:
             data["collider"] = (
                 self.collider.to_dict()
+            )
+
+        if self.player_controller is not None:
+            data["player_controller"] = (
+                self.player_controller.to_dict()
             )
 
         return data
@@ -408,10 +500,15 @@ class SceneEntity:
             "collider"
         )
 
+        controller_data = data.get(
+            "player_controller"
+        )
+
         sprite: SpriteComponent | None = None
         camera: CameraComponent | None = None
         tilemap: TileMapComponent | None = None
         collider: ColliderComponent | None = None
+        player_controller: PlayerControllerComponent | None = None
 
         if isinstance(
             sprite_data,
@@ -445,6 +542,16 @@ class SceneEntity:
                 collider_data
             )
 
+        if isinstance(
+            controller_data,
+            dict,
+        ):
+            player_controller = (
+                PlayerControllerComponent.from_dict(
+                    controller_data
+                )
+            )
+
         entity = cls(
             id=str(
                 data.get(
@@ -474,6 +581,7 @@ class SceneEntity:
             camera=camera,
             tilemap=tilemap,
             collider=collider,
+            player_controller=player_controller,
         )
 
         entity.refresh_kind()
@@ -491,7 +599,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 5
+    format: int = 6
     type: str = "scene"
 
     def add_entity(
@@ -548,6 +656,19 @@ class SceneResource:
             entity.camera.active = (
                 entity.id == entity_id
             )
+
+    def player_entity(
+        self,
+    ) -> SceneEntity | None:
+        for entity in self.entities:
+            if (
+                entity.player_controller
+                is not None
+                and entity.player_controller.enabled
+            ):
+                return entity
+
+        return None
 
     def to_dict(self) -> dict[str, object]:
         return {
