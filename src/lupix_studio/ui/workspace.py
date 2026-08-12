@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from lupix_studio.assets.registry import AssetRecord
 from lupix_studio.scene.model import SceneResource
+from lupix_studio.ui.play_preview import PlayPreview
 from lupix_studio.ui.scene_viewport import SceneViewport
 from lupix_studio.ui.start_page import StartPage
 from lupix_studio.ui.tilemap_editor import TileMapEditor
@@ -64,6 +65,7 @@ class ProjectPage(QWidget):
 
 class WorkspaceWidget(QWidget):
     tilemap_back_requested = Signal()
+    play_stop_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -75,6 +77,7 @@ class WorkspaceWidget(QWidget):
         self.scene_viewport = SceneViewport()
         self.tileset_editor = TileSetEditor()
         self.tilemap_editor = TileMapEditor()
+        self.play_preview = PlayPreview()
 
         self.stack.addWidget(
             self.start_page
@@ -96,6 +99,10 @@ class WorkspaceWidget(QWidget):
             self.tilemap_editor
         )
 
+        self.stack.addWidget(
+            self.play_preview
+        )
+
         layout = QVBoxLayout(
             self
         )
@@ -113,6 +120,10 @@ class WorkspaceWidget(QWidget):
 
         self.tilemap_editor.back_requested.connect(
             self.tilemap_back_requested.emit
+        )
+
+        self.play_preview.stop_requested.connect(
+            self.play_stop_requested.emit
         )
 
         self.show_start_page()
@@ -177,3 +188,22 @@ class WorkspaceWidget(QWidget):
         self.stack.setCurrentWidget(
             self.tilemap_editor
         )
+
+    def show_play_preview(
+        self,
+        project_root: Path,
+        resource: SceneResource,
+    ) -> None:
+        self.play_preview.start(
+            project_root,
+            resource,
+        )
+
+        self.stack.setCurrentWidget(
+            self.play_preview
+        )
+
+    def stop_play_preview(
+        self,
+    ) -> None:
+        self.play_preview.stop_runtime()

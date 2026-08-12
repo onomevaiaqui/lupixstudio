@@ -17,28 +17,53 @@ from PySide6.QtWidgets import (
 from lupix_studio.assets.importer import import_png
 from lupix_studio.assets.registry import AssetRegistry
 from lupix_studio.project.creator import create_project
-from lupix_studio.project.loader import LoadedProject, load_project
-from lupix_studio.project.validator import validate_project
+from lupix_studio.project.loader import (
+    LoadedProject,
+    load_project,
+)
+from lupix_studio.project.validator import (
+    validate_project,
+)
 from lupix_studio.scene.creator import create_scene
 from lupix_studio.scene.model import SceneResource
 from lupix_studio.scene.serializer import SceneSerializer
-from lupix_studio.settings.recent_projects import RecentProjectsManager
+from lupix_studio.settings.recent_projects import (
+    RecentProjectsManager,
+)
 from lupix_studio.ui.asset_browser import AssetBrowser
 from lupix_studio.ui.asset_inspector import (
     AssetInspector,
     load_asset_record,
 )
-from lupix_studio.ui.asset_preview_dialog import AssetPreviewDialog
-from lupix_studio.ui.camera_component_editor import CameraComponentEditor
-from lupix_studio.ui.collider_component_editor import ColliderComponentEditor
-from lupix_studio.ui.entity_inspector import EntityInspector
-from lupix_studio.ui.new_project_dialog import NewProjectDialog
-from lupix_studio.ui.new_scene_dialog import NewSceneDialog
-from lupix_studio.ui.player_controller_editor import PlayerControllerEditor
+from lupix_studio.ui.asset_preview_dialog import (
+    AssetPreviewDialog,
+)
+from lupix_studio.ui.camera_component_editor import (
+    CameraComponentEditor,
+)
+from lupix_studio.ui.collider_component_editor import (
+    ColliderComponentEditor,
+)
+from lupix_studio.ui.entity_inspector import (
+    EntityInspector,
+)
+from lupix_studio.ui.new_project_dialog import (
+    NewProjectDialog,
+)
+from lupix_studio.ui.new_scene_dialog import (
+    NewSceneDialog,
+)
+from lupix_studio.ui.player_controller_editor import (
+    PlayerControllerEditor,
+)
 from lupix_studio.ui.project_tree import ProjectTree
 from lupix_studio.ui.scene_tree import SceneTree
-from lupix_studio.ui.sprite_component_editor import SpriteComponentEditor
-from lupix_studio.ui.tilemap_component_editor import TileMapComponentEditor
+from lupix_studio.ui.sprite_component_editor import (
+    SpriteComponentEditor,
+)
+from lupix_studio.ui.tilemap_component_editor import (
+    TileMapComponentEditor,
+)
 from lupix_studio.ui.workspace import WorkspaceWidget
 
 
@@ -52,11 +77,22 @@ class MainWindow(QMainWindow):
         self.current_scene_path: Path | None = None
         self.current_scene: SceneResource | None = None
 
-        self.recent_projects = RecentProjectsManager()
+        self.recent_projects = (
+            RecentProjectsManager()
+        )
+
         self.scene_serializer = SceneSerializer()
 
-        self.setWindowTitle("Lupix Studio")
-        self.resize(1440, 900)
+        self.playing = False
+
+        self.setWindowTitle(
+            "Lupix Studio"
+        )
+
+        self.resize(
+            1440,
+            900,
+        )
 
         self._create_menu()
         self._create_workspace()
@@ -66,6 +102,7 @@ class MainWindow(QMainWindow):
         self._create_status_bar()
 
         self._refresh_recent_projects()
+        self._update_play_actions()
 
     def _create_menu(self) -> None:
         file_menu = self.menuBar().addMenu(
@@ -126,6 +163,32 @@ class MainWindow(QMainWindow):
 
         validate_action.triggered.connect(
             self._validate_current_project
+        )
+
+        self.play_action = QAction(
+            "▶ Executar",
+            self,
+        )
+
+        self.play_action.setShortcut(
+            "F6"
+        )
+
+        self.play_action.triggered.connect(
+            self._start_play_preview
+        )
+
+        self.stop_action = QAction(
+            "■ Parar",
+            self,
+        )
+
+        self.stop_action.setShortcut(
+            "F8"
+        )
+
+        self.stop_action.triggered.connect(
+            self._stop_play_preview
         )
 
         new_scene_action = QAction(
@@ -212,11 +275,14 @@ class MainWindow(QMainWindow):
         project_menu.addSeparator()
 
         project_menu.addAction(
-            QAction(
-                "Executar",
-                self,
-            )
+            self.play_action
         )
+
+        project_menu.addAction(
+            self.stop_action
+        )
+
+        project_menu.addSeparator()
 
         project_menu.addAction(
             QAction(
@@ -281,6 +347,10 @@ class MainWindow(QMainWindow):
             self._on_tilemap_back_requested
         )
 
+        self.workspace.play_stop_requested.connect(
+            self._stop_play_preview
+        )
+
         self.setCentralWidget(
             self.workspace
         )
@@ -336,12 +406,29 @@ class MainWindow(QMainWindow):
 
         self.asset_inspector = AssetInspector()
 
-        self.entity_inspector = EntityInspector()
-        self.sprite_editor = SpriteComponentEditor()
-        self.camera_editor = CameraComponentEditor()
-        self.tilemap_editor = TileMapComponentEditor()
-        self.collider_editor = ColliderComponentEditor()
-        self.player_editor = PlayerControllerEditor()
+        self.entity_inspector = (
+            EntityInspector()
+        )
+
+        self.sprite_editor = (
+            SpriteComponentEditor()
+        )
+
+        self.camera_editor = (
+            CameraComponentEditor()
+        )
+
+        self.tilemap_editor = (
+            TileMapComponentEditor()
+        )
+
+        self.collider_editor = (
+            ColliderComponentEditor()
+        )
+
+        self.player_editor = (
+            PlayerControllerEditor()
+        )
 
         self.entity_tabs = QTabWidget()
 
@@ -425,7 +512,7 @@ class MainWindow(QMainWindow):
         )
 
     def _create_bottom_dock(self) -> None:
-        dock = QDockWidget(
+        self.bottom_dock = QDockWidget(
             "Saída",
             self,
         )
@@ -473,17 +560,17 @@ class MainWindow(QMainWindow):
             "Assets",
         )
 
-        dock.setWidget(
+        self.bottom_dock.setWidget(
             tabs
         )
 
-        dock.setMinimumHeight(
+        self.bottom_dock.setMinimumHeight(
             180
         )
 
         self.addDockWidget(
             Qt.DockWidgetArea.BottomDockWidgetArea,
-            dock,
+            self.bottom_dock,
         )
 
     def _create_status_bar(self) -> None:
@@ -497,7 +584,162 @@ class MainWindow(QMainWindow):
             status
         )
 
+    def _update_play_actions(self) -> None:
+        has_scene = (
+            self.current_scene is not None
+            and self.current_project is not None
+        )
+
+        self.play_action.setEnabled(
+            has_scene
+            and not self.playing
+        )
+
+        self.stop_action.setEnabled(
+            self.playing
+        )
+
+    def _start_play_preview(self) -> None:
+        if self.playing:
+            return
+
+        if (
+            self.current_project is None
+            or self.current_scene is None
+        ):
+            QMessageBox.warning(
+                self,
+                "Executar",
+                "Abra uma cena antes de executar.",
+            )
+            return
+
+        player = (
+            self.current_scene.player_entity()
+        )
+
+        if player is None:
+            QMessageBox.warning(
+                self,
+                "Executar",
+                (
+                    "A cena não possui uma entidade "
+                    "com Player Controller ativo."
+                ),
+            )
+            return
+
+        if player.collider is None:
+            QMessageBox.warning(
+                self,
+                "Executar",
+                (
+                    "O Player não possui Collider.\n\n"
+                    "Adicione um Collider antes "
+                    "de executar a cena."
+                ),
+            )
+            return
+
+        self._save_current_scene()
+
+        self.playing = True
+
+        self.workspace.show_play_preview(
+            self.current_project.root,
+            self.current_scene,
+        )
+
+        self.project_dock.setEnabled(
+            False
+        )
+
+        self.inspector_dock.setEnabled(
+            False
+        )
+
+        self.statusBar().showMessage(
+            "▶ Executando cena"
+        )
+
+        self.console.append(
+            
+                "Preview iniciado: "
+                f"{self.current_scene.name}"
+            
+        )
+
+        self.console.append(
+            
+                "Controles: "
+                "A/← esquerda, "
+                "D/→ direita, "
+                "Espaço pular, "
+                "Esc parar."
+            
+        )
+
+        self.setWindowTitle(
+            f"▶ {self.current_scene.name} - "
+            f"{self.current_project.name} - "
+            "Lupix Studio"
+        )
+
+        self._update_play_actions()
+
+    def _stop_play_preview(self) -> None:
+        if not self.playing:
+            return
+
+        self.workspace.stop_play_preview()
+
+        self.playing = False
+
+        self.project_dock.setEnabled(
+            True
+        )
+
+        self.inspector_dock.setEnabled(
+            True
+        )
+
+        if (
+            self.current_project is not None
+            and self.current_scene is not None
+        ):
+            self.workspace.show_scene(
+                self.current_project.root,
+                self.current_scene,
+            )
+
+            self._show_scene_hierarchy()
+
+            self.statusBar().showMessage(
+                
+                    "Preview encerrado. "
+                    "Cena restaurada."
+                
+            )
+
+            self.console.append(
+                
+                    "Preview encerrado. "
+                    "Estado de runtime descartado."
+                
+            )
+
+            self.setWindowTitle(
+                f"{self.current_scene.name} - "
+                f"{self.current_project.name} - "
+                "Lupix Studio"
+            )
+
+        self._update_play_actions()
+
     def _on_new_project(self) -> None:
+        if self.playing:
+            self._stop_play_preview()
+
         dialog = NewProjectDialog(
             self
         )
@@ -541,6 +783,9 @@ class MainWindow(QMainWindow):
         )
 
     def _on_open_project(self) -> None:
+        if self.playing:
+            self._stop_play_preview()
+
         directory = QFileDialog.getExistingDirectory(
             self,
             "Abrir Projeto Lupix",
@@ -575,6 +820,9 @@ class MainWindow(QMainWindow):
         self,
         path: Path,
     ) -> None:
+        if self.playing:
+            self._stop_play_preview()
+
         try:
             project = load_project(
                 path
@@ -675,7 +923,12 @@ class MainWindow(QMainWindow):
 
         self._validate_current_project()
 
+        self._update_play_actions()
+
     def _on_new_scene(self) -> None:
+        if self.playing:
+            return
+
         if self.current_project is None:
             QMessageBox.warning(
                 self,
@@ -744,7 +997,13 @@ class MainWindow(QMainWindow):
         if self.current_project is None:
             return
 
-        self.current_scene_path = path.resolve()
+        if self.playing:
+            self._stop_play_preview()
+
+        self.current_scene_path = (
+            path.resolve()
+        )
+
         self.current_scene = resource
 
         self.scene_tree.set_scene(
@@ -802,13 +1061,17 @@ class MainWindow(QMainWindow):
             "Lupix Studio"
         )
 
+        self._update_play_actions()
+
     def _open_scene_file(
         self,
         path: Path,
     ) -> None:
         try:
-            resource = self.scene_serializer.load(
-                path
+            resource = (
+                self.scene_serializer.load(
+                    path
+                )
             )
 
         except (
@@ -833,6 +1096,9 @@ class MainWindow(QMainWindow):
         item: QTreeWidgetItem,
         column: int,
     ) -> None:
+        if self.playing:
+            return
+
         del column
 
         value = item.data(
@@ -856,7 +1122,10 @@ class MainWindow(QMainWindow):
             )
 
     def _show_project_view(self) -> None:
-        if self.current_project is None:
+        if (
+            self.current_project is None
+            or self.playing
+        ):
             return
 
         self._show_project_hierarchy()
@@ -870,7 +1139,10 @@ class MainWindow(QMainWindow):
         )
 
         self.setWindowTitle(
-            f"{self.current_project.name} - Lupix Studio"
+            
+                f"{self.current_project.name} "
+                "- Lupix Studio"
+            
         )
 
         self.statusBar().showMessage(
@@ -896,7 +1168,10 @@ class MainWindow(QMainWindow):
         )
 
     def _on_scene_changed(self) -> None:
-        if self.current_scene is None:
+        if (
+            self.current_scene is None
+            or self.playing
+        ):
             return
 
         self.workspace.scene_viewport.refresh_entities()
@@ -935,6 +1210,7 @@ class MainWindow(QMainWindow):
         if (
             self.current_scene is None
             or self.current_project is None
+            or self.playing
         ):
             return
 
@@ -1007,6 +1283,9 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
+        if self.playing:
+            return
+
         self.workspace.scene_viewport.select_entity(
             entity_id
         )
@@ -1019,6 +1298,9 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
+        if self.playing:
+            return
+
         self.scene_tree.select_entity(
             entity_id
         )
@@ -1033,7 +1315,10 @@ class MainWindow(QMainWindow):
         x: float,
         y: float,
     ) -> None:
-        if self.current_scene is None:
+        if (
+            self.current_scene is None
+            or self.playing
+        ):
             return
 
         entity = self.current_scene.entity(
@@ -1056,6 +1341,9 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
+        if self.playing:
+            return
+
         self.workspace.scene_viewport.update_entity(
             entity_id
         )
@@ -1066,6 +1354,9 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
+        if self.playing:
+            return
+
         self.workspace.scene_viewport.update_entity(
             entity_id
         )
@@ -1088,7 +1379,10 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
-        if self.current_scene is None:
+        if (
+            self.current_scene is None
+            or self.playing
+        ):
             return
 
         self.workspace.scene_viewport.refresh_entities()
@@ -1118,6 +1412,7 @@ class MainWindow(QMainWindow):
         if (
             self.current_scene is None
             or self.current_project is None
+            or self.playing
         ):
             return
 
@@ -1150,7 +1445,10 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
-        if self.current_scene is None:
+        if (
+            self.current_scene is None
+            or self.playing
+        ):
             return
 
         entity = self.current_scene.entity(
@@ -1180,7 +1478,10 @@ class MainWindow(QMainWindow):
         self,
         entity_id: str,
     ) -> None:
-        if self.current_scene is None:
+        if (
+            self.current_scene is None
+            or self.playing
+        ):
             return
 
         entity = self.current_scene.entity(
@@ -1209,6 +1510,7 @@ class MainWindow(QMainWindow):
         if (
             self.current_scene is None
             or self.current_project is None
+            or self.playing
         ):
             return
 
@@ -1255,6 +1557,7 @@ class MainWindow(QMainWindow):
         if (
             self.current_project is None
             or self.current_scene is None
+            or self.playing
         ):
             return
 
@@ -1274,7 +1577,10 @@ class MainWindow(QMainWindow):
         )
 
         self.console.append(
-            "Retorno do TileMap Editor para a cena."
+            
+                "Retorno do TileMap Editor "
+                "para a cena."
+            
         )
 
         self.setWindowTitle(
@@ -1287,6 +1593,9 @@ class MainWindow(QMainWindow):
         self,
         asset_type: str,
     ) -> None:
+        if self.playing:
+            return
+
         if self.current_project is None:
             QMessageBox.warning(
                 self,
@@ -1347,14 +1656,20 @@ class MainWindow(QMainWindow):
             )
 
         self.statusBar().showMessage(
-            f"Asset importado: {imported.destination.name}"
+            
+                "Asset importado: "
+                f"{imported.destination.name}"
+            
         )
 
     def _show_asset_in_inspector(
         self,
         path: Path,
     ) -> None:
-        if self.current_project is None:
+        if (
+            self.current_project is None
+            or self.playing
+        ):
             return
 
         record = load_asset_record(
@@ -1378,7 +1693,10 @@ class MainWindow(QMainWindow):
         self,
         path: Path,
     ) -> None:
-        if self.current_project is None:
+        if (
+            self.current_project is None
+            or self.playing
+        ):
             return
 
         registry = AssetRegistry(
@@ -1428,7 +1746,10 @@ class MainWindow(QMainWindow):
 
         if not issues:
             self.problems.append(
-                "Projeto válido para desenvolvimento Lupi."
+                
+                    "Projeto válido para "
+                    "desenvolvimento Lupi."
+                
             )
 
             self.statusBar().showMessage(
@@ -1451,8 +1772,21 @@ class MainWindow(QMainWindow):
     def _refresh_recent_projects(
         self,
     ) -> None:
-        projects = self.recent_projects.load()
+        projects = (
+            self.recent_projects.load()
+        )
 
         self.workspace.start_page.set_recent_projects(
             projects
+        )
+
+    def closeEvent(
+        self,
+        event,
+    ) -> None:
+        if self.playing:
+            self.workspace.stop_play_preview()
+
+        super().closeEvent(
+            event
         )
