@@ -4,18 +4,22 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
-    QListWidget,
-    QListWidgetItem,
+    QMenu,
     QPushButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from lupix_studio.scene.model import SceneEntity, SceneResource
+from lupix_studio.scene.model import (
+    SceneEntity,
+    SceneResource,
+)
 
 
 class SceneTree(QWidget):
-    """Lista e gerencia as entidades da cena aberta."""
+    """Hierarquia visual de uma Scene."""
 
     entity_selected = Signal(str)
     scene_changed = Signal()
@@ -25,139 +29,471 @@ class SceneTree(QWidget):
 
         self.resource: SceneResource | None = None
 
-        self.entity_list = QListWidget()
+        self.tree = QTreeWidget()
 
-        self.add_button = QPushButton("Adicionar Objeto")
-        self.rename_button = QPushButton("Renomear")
-        self.remove_button = QPushButton("Excluir")
+        self.tree.setHeaderLabels(
+            [
+                "Entidade",
+                "Componentes",
+            ]
+        )
 
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.add_button)
-        buttons.addWidget(self.rename_button)
-        buttons.addWidget(self.remove_button)
+        self.tree.setColumnWidth(
+    0,
+    130,
+)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.addWidget(self.entity_list)
-        layout.addLayout(buttons)
+        self.tree.setAlternatingRowColors(
+            True
+        )
+
+        self.tree.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+
+        self.add_button = QPushButton(
+            "+ Entidade"
+        )
+
+        self.remove_button = QPushButton(
+            "- Remover"
+        )
+
+        controls = QHBoxLayout()
+
+        controls.addWidget(
+            self.add_button
+        )
+
+        controls.addWidget(
+            self.remove_button
+        )
+
+        layout = QVBoxLayout(
+            self
+        )
+
+        layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        layout.addLayout(
+            controls
+        )
+
+        layout.addWidget(
+            self.tree
+        )
+
+        self.tree.itemSelectionChanged.connect(
+            self._on_selection_changed
+        )
+
+        self.tree.itemDoubleClicked.connect(
+            self._on_item_double_clicked
+        )
+
+        self.tree.customContextMenuRequested.connect(
+            self._show_context_menu
+        )
 
         self.add_button.clicked.connect(
             self._add_entity
         )
 
-        self.rename_button.clicked.connect(
-            self._rename_entity
-        )
-
         self.remove_button.clicked.connect(
-            self._remove_entity
+            self._remove_selected_entity
         )
 
-        self.entity_list.itemSelectionChanged.connect(
-            self._emit_selected_entity
-        )
+        self._update_buttons()
 
     def set_scene(
         self,
         resource: SceneResource | None,
     ) -> None:
         self.resource = resource
+
         self.refresh()
 
     def refresh(self) -> None:
-        selected_id = self.selected_entity_id()
+        selected_id = (
+            self.selected_entity_id()
+        )
 
-        self.entity_list.blockSignals(True)
+        self.tree.blockSignals(
+            True
+        )
 
         try:
-            self.entity_list.clear()
+            self.tree.clear()
 
             if self.resource is None:
+                self._update_buttons()
                 return
 
+            root = QTreeWidgetItem(
+                [
+                    self.resource.name,
+                    "",
+                ]
+            )
+
+            root.setData(
+                0,
+                Qt.ItemDataRole.UserRole,
+                "__scene__",
+            )
+
+            root.setExpanded(
+                True
+            )
+
+            self.tree.addTopLevelItem(
+                root
+            )
+
             for entity in self.resource.entities:
-                item = QListWidgetItem(
-                    entity.name
+                item = self._create_entity_item(
+                    entity
                 )
 
-                item.setData(
-                    Qt.ItemDataRole.UserRole,
-                    entity.id,
-                )
-
-                self.entity_list.addItem(
+                root.addChild(
                     item
                 )
 
-        finally:
-            self.entity_list.blockSignals(False)
+            if selected_id is not None:
+                self._select_entity_internal(
+                    selected_id
+                )
 
-        if selected_id is not None:
-            self.select_entity(
-                selected_id
+            self.tree.expandAll()
+
+        finally:
+            self.tree.blockSignals(
+                False
             )
+
+        self._update_buttons()
+
+    def _create_entity_item(
+        self,
+        entity: SceneEntity,
+    ) -> QTreeWidgetItem:
+        item = QTreeWidgetItem(
+            [
+                entity.name,
+                self._component_text(
+                    entity
+                ),
+            ]
+        )
+
+        item.setData(
+            0,
+            Qt.ItemDataRole.UserRole,
+            entity.id,
+        )
+
+        tooltip = self._component_tooltip(
+            entity
+        )
+
+        item.setToolTip(
+            1,
+            tooltip,
+        )
+
+        return item
+
+    def _component_text(
+        self,
+        entity: SceneEntity,
+    ) -> str:
+        symbols: list[str] = []
+
+        if entity.sprite is not None:
+            symbols.append("🎨")
+
+        if entity.camera is not None:
+            symbols.append("📷")
+
+        if entity.tilemap is not None:
+            symbols.append("▦")
+
+        if entity.collider is not None:
+            symbols.append("◇")
+
+        if entity.player_controller is not None:
+            symbols.append("▶")
+
+        if not symbols:
+            return "—"
+
+        return "  ".join(symbols)
+
+    def _component_tooltip(
+        self,
+        entity: SceneEntity,
+    ) -> str:
+        components: list[str] = []
+
+        if entity.sprite is not None:
+            components.append(
+                "Sprite"
+            )
+
+        if entity.camera is not None:
+            camera_text = "Camera"
+
+            if entity.camera.active:
+                camera_text += " (ativa)"
+
+            components.append(
+                camera_text
+            )
+
+        if entity.tilemap is not None:
+            components.append(
+                "TileMap"
+            )
+
+        if entity.collider is not None:
+            collider_text = "Collider"
+
+            if not entity.collider.enabled:
+                collider_text += " (desativado)"
+
+            components.append(
+                collider_text
+            )
+
+        if entity.player_controller is not None:
+            player_text = (
+                "Player Controller"
+            )
+
+            if not entity.player_controller.enabled:
+                player_text += " (desativado)"
+
+            components.append(
+                player_text
+            )
+
+        if not components:
+            return "Nenhum componente"
+
+        return "\n".join(
+            components
+        )
 
     def selected_entity_id(
         self,
     ) -> str | None:
-        item = self.entity_list.currentItem()
-
-        if item is None:
-            return None
-
-        value = item.data(
-            Qt.ItemDataRole.UserRole
+        items = (
+            self.tree.selectedItems()
         )
 
-        if not value:
+        if not items:
             return None
 
-        return str(value)
+        value = items[0].data(
+            0,
+            Qt.ItemDataRole.UserRole,
+        )
+
+        if (
+            not value
+            or value == "__scene__"
+        ):
+            return None
+
+        return str(
+            value
+        )
 
     def select_entity(
         self,
         entity_id: str,
     ) -> None:
-        self.entity_list.blockSignals(True)
+        self.tree.blockSignals(
+            True
+        )
 
         try:
-            for row in range(
-                self.entity_list.count()
-            ):
-                item = self.entity_list.item(
-                    row
-                )
-
-                value = item.data(
-                    Qt.ItemDataRole.UserRole
-                )
-
-                if str(value) == entity_id:
-                    self.entity_list.setCurrentRow(
-                        row
-                    )
-                    return
+            self._select_entity_internal(
+                entity_id
+            )
 
         finally:
-            self.entity_list.blockSignals(False)
+            self.tree.blockSignals(
+                False
+            )
+
+        self._update_buttons()
+
+    def _select_entity_internal(
+        self,
+        entity_id: str,
+    ) -> None:
+        root = self.tree.topLevelItem(
+            0
+        )
+
+        if root is None:
+            return
+
+        for index in range(
+            root.childCount()
+        ):
+            item = root.child(
+                index
+            )
+
+            value = item.data(
+                0,
+                Qt.ItemDataRole.UserRole,
+            )
+
+            if str(value) != entity_id:
+                continue
+
+            self.tree.setCurrentItem(
+                item
+            )
+
+            return
+
+    def _on_selection_changed(
+        self,
+    ) -> None:
+        entity_id = (
+            self.selected_entity_id()
+        )
+
+        self._update_buttons()
+
+        if entity_id is None:
+            return
+
+        self.entity_selected.emit(
+            entity_id
+        )
+
+    def _on_item_double_clicked(
+        self,
+        item: QTreeWidgetItem,
+        column: int,
+    ) -> None:
+        del column
+
+        value = item.data(
+            0,
+            Qt.ItemDataRole.UserRole,
+        )
+
+        if (
+            not value
+            or value == "__scene__"
+        ):
+            return
+
+        self._rename_entity(
+            str(value)
+        )
+
+    def _show_context_menu(
+        self,
+        position,
+    ) -> None:
+        item = self.tree.itemAt(
+            position
+        )
+
+        if item is None:
+            return
+
+        value = item.data(
+            0,
+            Qt.ItemDataRole.UserRole,
+        )
+
+        if not value:
+            return
+
+        menu = QMenu(
+            self
+        )
+
+        if value == "__scene__":
+            add_action = menu.addAction(
+                "Adicionar Entidade"
+            )
+
+            selected_action = menu.exec(
+                self.tree.viewport().mapToGlobal(
+                    position
+                )
+            )
+
+            if selected_action is add_action:
+                self._add_entity()
+
+            return
+
+        rename_action = menu.addAction(
+            "Renomear"
+        )
+
+        remove_action = menu.addAction(
+            "Remover"
+        )
+
+        selected_action = menu.exec(
+            self.tree.viewport().mapToGlobal(
+                position
+            )
+        )
+
+        entity_id = str(
+            value
+        )
+
+        if selected_action is rename_action:
+            self._rename_entity(
+                entity_id
+            )
+
+        elif selected_action is remove_action:
+            self._remove_entity(
+                entity_id
+            )
 
     def _add_entity(self) -> None:
         if self.resource is None:
             return
 
-        number = 1
+        name, accepted = (
+            QInputDialog.getText(
+                self,
+                "Nova Entidade",
+                "Nome:",
+                text="Entity",
+            )
+        )
 
-        existing_names = {
-            entity.name
-            for entity in self.resource.entities
-        }
+        if not accepted:
+            return
 
-        while f"Objeto{number}" in existing_names:
-            number += 1
+        name = name.strip()
+
+        if not name:
+            return
 
         entity = SceneEntity(
-            name=f"Objeto{number}",
-            kind="empty",
+            name=name
         )
 
         self.resource.add_entity(
@@ -170,19 +506,47 @@ class SceneTree(QWidget):
             entity.id
         )
 
-        self.entity_selected.emit(
-            entity.id
-        )
-
         self.scene_changed.emit()
 
-    def _rename_entity(self) -> None:
+    def _remove_selected_entity(
+        self,
+    ) -> None:
+        entity_id = (
+            self.selected_entity_id()
+        )
+
+        if entity_id is None:
+            return
+
+        self._remove_entity(
+            entity_id
+        )
+
+    def _remove_entity(
+        self,
+        entity_id: str,
+    ) -> None:
         if self.resource is None:
             return
 
-        entity_id = self.selected_entity_id()
+        removed = (
+            self.resource.remove_entity(
+                entity_id
+            )
+        )
 
-        if entity_id is None:
+        if not removed:
+            return
+
+        self.refresh()
+
+        self.scene_changed.emit()
+
+    def _rename_entity(
+        self,
+        entity_id: str,
+    ) -> None:
+        if self.resource is None:
             return
 
         entity = self.resource.entity(
@@ -192,11 +556,13 @@ class SceneTree(QWidget):
         if entity is None:
             return
 
-        name, accepted = QInputDialog.getText(
-            self,
-            "Renomear Objeto",
-            "Nome:",
-            text=entity.name,
+        name, accepted = (
+            QInputDialog.getText(
+                self,
+                "Renomear Entidade",
+                "Nome:",
+                text=entity.name,
+            )
         )
 
         if not accepted:
@@ -215,37 +581,22 @@ class SceneTree(QWidget):
             entity.id
         )
 
-        self.entity_selected.emit(
-            entity.id
+        self.scene_changed.emit()
+
+    def _update_buttons(self) -> None:
+        has_scene = (
+            self.resource is not None
         )
 
-        self.scene_changed.emit()
+        has_entity = (
+            self.selected_entity_id()
+            is not None
+        )
 
-    def _remove_entity(self) -> None:
-        if self.resource is None:
-            return
+        self.add_button.setEnabled(
+            has_scene
+        )
 
-        entity_id = self.selected_entity_id()
-
-        if entity_id is None:
-            return
-
-        if not self.resource.remove_entity(
-            entity_id
-        ):
-            return
-
-        self.refresh()
-        self.scene_changed.emit()
-
-    def _emit_selected_entity(
-        self,
-    ) -> None:
-        entity_id = self.selected_entity_id()
-
-        if entity_id is None:
-            return
-
-        self.entity_selected.emit(
-            entity_id
+        self.remove_button.setEnabled(
+            has_entity
         )

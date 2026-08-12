@@ -31,9 +31,8 @@ from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
 )
-from lupix_studio.tilemap.serializer import (
-    TileMapSerializer,
-)
+from lupix_studio.tilemap.model import TileLayer
+from lupix_studio.tilemap.serializer import TileMapSerializer
 
 
 class SceneCanvas(QGraphicsView):
@@ -66,6 +65,8 @@ class SceneCanvas(QGraphicsView):
 
         self.grid_size = 16
         self.grid_visible = True
+
+        self.colliders_visible = True
 
         self.entity_items: dict[
             str,
@@ -159,6 +160,14 @@ class SceneCanvas(QGraphicsView):
         )
 
         self.viewport().update()
+
+    def set_colliders_visible(
+        self,
+        visible: bool,
+    ) -> None:
+        self.colliders_visible = visible
+
+        self.rebuild_entities()
 
     def set_zoom(
         self,
@@ -273,16 +282,32 @@ class SceneCanvas(QGraphicsView):
 
             has_visual = True
 
-        collider_item = self._create_collider_item(
-            entity
-        )
-
-        if collider_item is not None:
-            group.addToGroup(
-                collider_item
+        if self.colliders_visible:
+            collider_item = (
+                self._create_collider_item(
+                    entity
+                )
             )
 
-            has_visual = True
+            if collider_item is not None:
+                group.addToGroup(
+                    collider_item
+                )
+
+                has_visual = True
+
+            collision_group = (
+                self._create_tilemap_collision_group(
+                    entity
+                )
+            )
+
+            if collision_group is not None:
+                group.addToGroup(
+                    collision_group
+                )
+
+                has_visual = True
 
         if not has_visual:
             empty_item = self._create_empty_item(
@@ -295,10 +320,10 @@ class SceneCanvas(QGraphicsView):
 
         return group
 
-    def _create_tilemap_item(
+    def _load_tilemap(
         self,
         entity: SceneEntity,
-    ) -> QGraphicsPixmapItem | None:
+    ):
         if (
             entity.tilemap is None
             or not entity.tilemap.resource_path
@@ -315,7 +340,7 @@ class SceneCanvas(QGraphicsView):
             return None
 
         try:
-            tilemap = TileMapSerializer().load(
+            return TileMapSerializer().load(
                 resource_path
             )
 
@@ -326,7 +351,19 @@ class SceneCanvas(QGraphicsView):
         ):
             return None
 
-        if not tilemap.tileset_asset_id:
+    def _create_tilemap_item(
+        self,
+        entity: SceneEntity,
+    ) -> QGraphicsPixmapItem | None:
+        tilemap = self._load_tilemap(
+            entity
+        )
+
+        if (
+            tilemap is None
+            or not tilemap.tileset_asset_id
+            or self.project_root is None
+        ):
             return None
 
         registry = AssetRegistry(
@@ -394,6 +431,12 @@ class SceneCanvas(QGraphicsView):
 
         for layer in tilemap.layers:
             if not layer.visible:
+                continue
+
+            if (
+                layer.name.strip().lower()
+                == "collision"
+            ):
                 continue
 
             painter.save()
@@ -502,6 +545,135 @@ class SceneCanvas(QGraphicsView):
         )
 
         return item
+
+    def _collision_layer(
+        self,
+        entity: SceneEntity,
+    ) -> tuple[object, TileLayer] | None:
+        tilemap = self._load_tilemap(
+            entity
+        )
+
+        if tilemap is None:
+            return None
+
+        for layer in tilemap.layers:
+            if (
+                layer.name.strip().lower()
+                == "collision"
+            ):
+                return (
+                    tilemap,
+                    layer,
+                )
+
+        return None
+
+    def _create_tilemap_collision_group(
+        self,
+        entity: SceneEntity,
+    ) -> QGraphicsItemGroup | None:
+        result = self._collision_layer(
+            entity
+        )
+
+        if result is None:
+            return None
+
+        tilemap, layer = result
+
+        if not layer.cells:
+            return None
+
+        group = QGraphicsItemGroup()
+
+        fill_color = QColor(
+            255,
+            70,
+            70,
+            75,
+        )
+
+        border_color = QColor(
+            255,
+            90,
+            90,
+            220,
+        )
+
+        pen = QPen(
+            border_color,
+            1,
+        )
+
+        pen.setCosmetic(
+            True
+        )
+
+        for key in layer.cells:
+            try:
+                column_text, row_text = (
+                    key.split(
+                        ",",
+                        maxsplit=1,
+                    )
+                )
+
+                column = int(
+                    column_text
+                )
+
+                row = int(
+                    row_text
+                )
+
+            except (
+                ValueError,
+                AttributeError,
+            ):
+                continue
+
+            rect = QGraphicsRectItem(
+                column
+                * tilemap.tile_width,
+                row
+                * tilemap.tile_height,
+                tilemap.tile_width,
+                tilemap.tile_height,
+            )
+
+            rect.setPen(
+                pen
+            )
+
+            rect.setBrush(
+                fill_color
+            )
+
+            rect.setZValue(
+                85000
+            )
+
+            group.addToGroup(
+                rect
+            )
+
+        transform = QTransform()
+
+        transform.scale(
+            entity.transform.scale_x,
+            entity.transform.scale_y,
+        )
+
+        group.setTransform(
+            transform
+        )
+
+        group.setZValue(
+            85000
+        )
+
+        return group
 
     def _create_sprite_item(
         self,
@@ -694,7 +866,7 @@ class SceneCanvas(QGraphicsView):
         )
 
         fill.setAlpha(
-            30
+            35
         )
 
         item.setBrush(
@@ -1029,6 +1201,14 @@ class SceneViewport(QWidget):
             "16px"
         )
 
+        self.colliders_checkbox = QCheckBox(
+            "Mostrar Colliders"
+        )
+
+        self.colliders_checkbox.setChecked(
+            True
+        )
+
         self.zoom_combo = QComboBox()
 
         for label, factor in (
@@ -1062,6 +1242,14 @@ class SceneViewport(QWidget):
 
         controls.addWidget(
             self.grid_combo
+        )
+
+        controls.addSpacing(
+            20
+        )
+
+        controls.addWidget(
+            self.colliders_checkbox
         )
 
         controls.addSpacing(
@@ -1106,6 +1294,10 @@ class SceneViewport(QWidget):
             self._update_grid
         )
 
+        self.colliders_checkbox.toggled.connect(
+            self.canvas.set_colliders_visible
+        )
+
         self.zoom_combo.currentIndexChanged.connect(
             self._update_zoom
         )
@@ -1143,6 +1335,10 @@ class SceneViewport(QWidget):
         self.canvas.set_resource(
             self.project_root,
             resource,
+        )
+
+        self.canvas.set_colliders_visible(
+            self.colliders_checkbox.isChecked()
         )
 
         self._update_grid()
