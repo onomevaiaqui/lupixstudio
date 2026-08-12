@@ -405,6 +405,12 @@ class PlayCanvas(QGraphicsView):
             if not layer.visible:
                 continue
 
+            if (
+                layer.name.strip().lower()
+                == "collision"
+            ):
+                continue
+
             painter.save()
 
             painter.setOpacity(

@@ -566,21 +566,32 @@ class TileMapCanvas(QGraphicsView):
             )
 
         else:
-            if self.selected_tile_id is None:
-                return False
+            is_collision_layer = (
+                layer.name.strip().lower()
+                == "collision"
+            )
+
+            if is_collision_layer:
+                tile_id = 0
+
+            else:
+                if self.selected_tile_id is None:
+                    return False
+
+                tile_id = self.selected_tile_id
 
             previous = layer.tile(
                 column,
                 row,
             )
 
-            if previous == self.selected_tile_id:
+            if previous == tile_id:
                 return False
 
             layer.set_tile(
                 column,
                 row,
-                self.selected_tile_id,
+                tile_id,
             )
 
         self.viewport().update()
@@ -591,10 +602,7 @@ class TileMapCanvas(QGraphicsView):
         self,
         start: tuple[int, int],
     ) -> None:
-        if (
-            self.resource is None
-            or self.selected_tile_id is None
-        ):
+        if self.resource is None:
             return
 
         layer = self._active_layer()
@@ -602,15 +610,27 @@ class TileMapCanvas(QGraphicsView):
         if layer is None:
             return
 
+        is_collision_layer = (
+            layer.name.strip().lower()
+            == "collision"
+        )
+
+        if is_collision_layer:
+            replacement_tile = 0
+
+        else:
+            if self.selected_tile_id is None:
+                return
+
+            replacement_tile = (
+                self.selected_tile_id
+            )
+
         start_column, start_row = start
 
         target_tile = layer.tile(
             start_column,
             start_row,
-        )
-
-        replacement_tile = (
-            self.selected_tile_id
         )
 
         if target_tile == replacement_tile:
@@ -1034,17 +1054,32 @@ class TileMapCanvas(QGraphicsView):
         self,
         painter: QPainter,
     ) -> None:
-        if (
-            self.resource is None
-            or self.tileset_pixmap is None
-        ):
+        if self.resource is None:
             return
 
         for layer in self.resource.layers:
             if not layer.visible:
                 continue
 
+            is_collision_layer = (
+                layer.name.strip().lower()
+                == "collision"
+            )
+
             painter.save()
+
+            if is_collision_layer:
+                self._draw_collision_layer(
+                    painter,
+                    layer,
+                )
+
+                painter.restore()
+                continue
+
+            if self.tileset_pixmap is None:
+                painter.restore()
+                continue
 
             painter.setOpacity(
                 layer.opacity
@@ -1109,6 +1144,76 @@ class TileMapCanvas(QGraphicsView):
 
             painter.restore()
 
+    def _draw_collision_layer(
+        self,
+        painter: QPainter,
+        layer: TileLayer,
+    ) -> None:
+        if self.resource is None:
+            return
+
+        fill = QColor(
+            255,
+            70,
+            70,
+            90,
+        )
+
+        border = QPen(
+            QColor(
+                255,
+                100,
+                100,
+                210,
+            ),
+            1,
+        )
+
+        border.setCosmetic(
+            True
+        )
+
+        painter.setPen(
+            border
+        )
+
+        painter.setBrush(
+            fill
+        )
+
+        for key in layer.cells:
+            try:
+                column_text, row_text = key.split(
+                    ",",
+                    maxsplit=1,
+                )
+
+                column = int(
+                    column_text
+                )
+
+                row = int(
+                    row_text
+                )
+
+            except (
+                ValueError,
+                AttributeError,
+            ):
+                continue
+
+            rect = QRectF(
+                column
+                * self.resource.tile_width,
+                row
+                * self.resource.tile_height,
+                self.resource.tile_width,
+                self.resource.tile_height,
+            )
+
+            painter.drawRect(
+                rect
+            )
 
 class TileMapEditor(QWidget):
     """Editor visual de TileMaps."""
