@@ -22,7 +22,25 @@ class SceneTree(QWidget):
     """Hierarquia visual de uma Scene."""
 
     entity_selected = Signal(str)
+
+    component_selected = Signal(
+        str,
+        str,
+    )
+
     scene_changed = Signal()
+
+    NODE_SCENE = "scene"
+    NODE_ENTITY = "entity"
+    NODE_COMPONENT = "component"
+
+    ROLE_NODE_TYPE = (
+        Qt.ItemDataRole.UserRole + 1
+    )
+
+    ROLE_COMPONENT = (
+        Qt.ItemDataRole.UserRole + 2
+    )
 
     def __init__(self) -> None:
         super().__init__()
@@ -31,19 +49,19 @@ class SceneTree(QWidget):
 
         self.tree = QTreeWidget()
 
-        self.tree.setHeaderLabels(
-            [
-                "Entidade",
-                "Componentes",
-            ]
+        self.tree.setHeaderLabel(
+            "Hierarquia"
         )
 
-        self.tree.setColumnWidth(
-    0,
-    130,
-)
-
         self.tree.setAlternatingRowColors(
+            True
+        )
+
+        self.tree.setIndentation(
+            18
+        )
+
+        self.tree.setAnimated(
             True
         )
 
@@ -119,8 +137,16 @@ class SceneTree(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        selected_id = (
+        selected_entity = (
             self.selected_entity_id()
+        )
+
+        selected_component = (
+            self.selected_component()
+        )
+
+        expanded_entities = (
+            self._expanded_entity_ids()
         )
 
         self.tree.blockSignals(
@@ -137,7 +163,6 @@ class SceneTree(QWidget):
             root = QTreeWidgetItem(
                 [
                     self.resource.name,
-                    "",
                 ]
             )
 
@@ -145,6 +170,12 @@ class SceneTree(QWidget):
                 0,
                 Qt.ItemDataRole.UserRole,
                 "__scene__",
+            )
+
+            root.setData(
+                0,
+                self.ROLE_NODE_TYPE,
+                self.NODE_SCENE,
             )
 
             root.setExpanded(
@@ -156,20 +187,26 @@ class SceneTree(QWidget):
             )
 
             for entity in self.resource.entities:
-                item = self._create_entity_item(
-                    entity
+                entity_item = (
+                    self._create_entity_item(
+                        entity
+                    )
                 )
 
                 root.addChild(
-                    item
+                    entity_item
                 )
 
-            if selected_id is not None:
-                self._select_entity_internal(
-                    selected_id
-                )
+                if entity.id in expanded_entities:
+                    entity_item.setExpanded(
+                        True
+                    )
 
-            self.tree.expandAll()
+            if selected_entity is not None:
+                self._restore_selection(
+                    selected_entity,
+                    selected_component,
+                )
 
         finally:
             self.tree.blockSignals(
@@ -185,9 +222,6 @@ class SceneTree(QWidget):
         item = QTreeWidgetItem(
             [
                 entity.name,
-                self._component_text(
-                    entity
-                ),
             ]
         )
 
@@ -197,117 +231,205 @@ class SceneTree(QWidget):
             entity.id,
         )
 
-        tooltip = self._component_tooltip(
-            entity
+        item.setData(
+            0,
+            self.ROLE_NODE_TYPE,
+            self.NODE_ENTITY,
         )
 
-        item.setToolTip(
-            1,
-            tooltip,
+        self._add_components(
+            item,
+            entity,
         )
 
         return item
 
-    def _component_text(
+    def _add_components(
         self,
+        parent: QTreeWidgetItem,
         entity: SceneEntity,
-    ) -> str:
-        symbols: list[str] = []
-
+    ) -> None:
         if entity.sprite is not None:
-            symbols.append("🎨")
-
-        if entity.camera is not None:
-            symbols.append("📷")
-
-        if entity.tilemap is not None:
-            symbols.append("▦")
-
-        if entity.collider is not None:
-            symbols.append("◇")
-
-        if entity.player_controller is not None:
-            symbols.append("▶")
-
-        if not symbols:
-            return "—"
-
-        return "  ".join(symbols)
-
-    def _component_tooltip(
-        self,
-        entity: SceneEntity,
-    ) -> str:
-        components: list[str] = []
-
-        if entity.sprite is not None:
-            components.append(
-                "Sprite"
+            self._add_component_item(
+                parent,
+                entity,
+                "sprite",
+                "Sprite",
             )
 
         if entity.camera is not None:
-            camera_text = "Camera"
+            label = "Camera"
 
             if entity.camera.active:
-                camera_text += " (ativa)"
+                label += " (ativa)"
 
-            components.append(
-                camera_text
+            self._add_component_item(
+                parent,
+                entity,
+                "camera",
+                label,
             )
 
         if entity.tilemap is not None:
-            components.append(
-                "TileMap"
+            self._add_component_item(
+                parent,
+                entity,
+                "tilemap",
+                "TileMap",
             )
 
         if entity.collider is not None:
-            collider_text = "Collider"
+            label = "Collider"
 
             if not entity.collider.enabled:
-                collider_text += " (desativado)"
+                label += " (desativado)"
 
-            components.append(
-                collider_text
+            self._add_component_item(
+                parent,
+                entity,
+                "collider",
+                label,
             )
 
         if entity.player_controller is not None:
-            player_text = (
-                "Player Controller"
-            )
+            label = "Player Controller"
 
             if not entity.player_controller.enabled:
-                player_text += " (desativado)"
+                label += " (desativado)"
 
-            components.append(
-                player_text
+            self._add_component_item(
+                parent,
+                entity,
+                "player",
+                label,
             )
 
-        if not components:
-            return "Nenhum componente"
-
-        return "\n".join(
-            components
+    def _add_component_item(
+        self,
+        parent: QTreeWidgetItem,
+        entity: SceneEntity,
+        component: str,
+        label: str,
+    ) -> None:
+        item = QTreeWidgetItem(
+            [
+                label,
+            ]
         )
+
+        item.setData(
+            0,
+            Qt.ItemDataRole.UserRole,
+            entity.id,
+        )
+
+        item.setData(
+            0,
+            self.ROLE_NODE_TYPE,
+            self.NODE_COMPONENT,
+        )
+
+        item.setData(
+            0,
+            self.ROLE_COMPONENT,
+            component,
+        )
+
+        parent.addChild(
+            item
+        )
+
+    def _expanded_entity_ids(
+        self,
+    ) -> set[str]:
+        expanded: set[str] = set()
+
+        root = self.tree.topLevelItem(
+            0
+        )
+
+        if root is None:
+            return expanded
+
+        for index in range(
+            root.childCount()
+        ):
+            item = root.child(
+                index
+            )
+
+            if not item.isExpanded():
+                continue
+
+            value = item.data(
+                0,
+                Qt.ItemDataRole.UserRole,
+            )
+
+            if value:
+                expanded.add(
+                    str(value)
+                )
+
+        return expanded
 
     def selected_entity_id(
         self,
     ) -> str | None:
-        items = (
-            self.tree.selectedItems()
-        )
+        items = self.tree.selectedItems()
 
         if not items:
             return None
 
-        value = items[0].data(
+        item = items[0]
+
+        node_type = item.data(
+            0,
+            self.ROLE_NODE_TYPE,
+        )
+
+        if node_type not in (
+            self.NODE_ENTITY,
+            self.NODE_COMPONENT,
+        ):
+            return None
+
+        value = item.data(
             0,
             Qt.ItemDataRole.UserRole,
         )
 
-        if (
-            not value
-            or value == "__scene__"
-        ):
+        if not value:
+            return None
+
+        return str(
+            value
+        )
+
+    def selected_component(
+        self,
+    ) -> str | None:
+        items = self.tree.selectedItems()
+
+        if not items:
+            return None
+
+        item = items[0]
+
+        node_type = item.data(
+            0,
+            self.ROLE_NODE_TYPE,
+        )
+
+        if node_type != self.NODE_COMPONENT:
+            return None
+
+        value = item.data(
+            0,
+            self.ROLE_COMPONENT,
+        )
+
+        if not value:
             return None
 
         return str(
@@ -366,20 +488,123 @@ class SceneTree(QWidget):
 
             return
 
+    def _restore_selection(
+        self,
+        entity_id: str,
+        component: str | None,
+    ) -> None:
+        root = self.tree.topLevelItem(
+            0
+        )
+
+        if root is None:
+            return
+
+        for index in range(
+            root.childCount()
+        ):
+            entity_item = root.child(
+                index
+            )
+
+            value = entity_item.data(
+                0,
+                Qt.ItemDataRole.UserRole,
+            )
+
+            if str(value) != entity_id:
+                continue
+
+            if component is None:
+                self.tree.setCurrentItem(
+                    entity_item
+                )
+                return
+
+            for child_index in range(
+                entity_item.childCount()
+            ):
+                component_item = (
+                    entity_item.child(
+                        child_index
+                    )
+                )
+
+                component_value = (
+                    component_item.data(
+                        0,
+                        self.ROLE_COMPONENT,
+                    )
+                )
+
+                if (
+                    str(component_value)
+                    != component
+                ):
+                    continue
+
+                entity_item.setExpanded(
+                    True
+                )
+
+                self.tree.setCurrentItem(
+                    component_item
+                )
+
+                return
+
+            self.tree.setCurrentItem(
+                entity_item
+            )
+
+            return
+
     def _on_selection_changed(
         self,
     ) -> None:
-        entity_id = (
-            self.selected_entity_id()
-        )
-
         self._update_buttons()
 
-        if entity_id is None:
+        items = self.tree.selectedItems()
+
+        if not items:
             return
 
-        self.entity_selected.emit(
-            entity_id
+        item = items[0]
+
+        node_type = item.data(
+            0,
+            self.ROLE_NODE_TYPE,
+        )
+
+        entity_id = item.data(
+            0,
+            Qt.ItemDataRole.UserRole,
+        )
+
+        if not entity_id:
+            return
+
+        if node_type == self.NODE_ENTITY:
+            self.entity_selected.emit(
+                str(entity_id)
+            )
+
+            return
+
+        if node_type != self.NODE_COMPONENT:
+            return
+
+        component = item.data(
+            0,
+            self.ROLE_COMPONENT,
+        )
+
+        if not component:
+            return
+
+        self.component_selected.emit(
+            str(entity_id),
+            str(component),
         )
 
     def _on_item_double_clicked(
@@ -389,15 +614,20 @@ class SceneTree(QWidget):
     ) -> None:
         del column
 
+        node_type = item.data(
+            0,
+            self.ROLE_NODE_TYPE,
+        )
+
+        if node_type != self.NODE_ENTITY:
+            return
+
         value = item.data(
             0,
             Qt.ItemDataRole.UserRole,
         )
 
-        if (
-            not value
-            or value == "__scene__"
-        ):
+        if not value:
             return
 
         self._rename_entity(
@@ -415,19 +645,16 @@ class SceneTree(QWidget):
         if item is None:
             return
 
-        value = item.data(
+        node_type = item.data(
             0,
-            Qt.ItemDataRole.UserRole,
+            self.ROLE_NODE_TYPE,
         )
 
-        if not value:
-            return
+        if node_type == self.NODE_SCENE:
+            menu = QMenu(
+                self
+            )
 
-        menu = QMenu(
-            self
-        )
-
-        if value == "__scene__":
             add_action = menu.addAction(
                 "Adicionar Entidade"
             )
@@ -442,6 +669,21 @@ class SceneTree(QWidget):
                 self._add_entity()
 
             return
+
+        if node_type != self.NODE_ENTITY:
+            return
+
+        value = item.data(
+            0,
+            Qt.ItemDataRole.UserRole,
+        )
+
+        if not value:
+            return
+
+        menu = QMenu(
+            self
+        )
 
         rename_action = menu.addAction(
             "Renomear"
@@ -588,15 +830,25 @@ class SceneTree(QWidget):
             self.resource is not None
         )
 
-        has_entity = (
-            self.selected_entity_id()
-            is not None
-        )
+        items = self.tree.selectedItems()
+
+        selected_entity_node = False
+
+        if items:
+            node_type = items[0].data(
+                0,
+                self.ROLE_NODE_TYPE,
+            )
+
+            selected_entity_node = (
+                node_type
+                == self.NODE_ENTITY
+            )
 
         self.add_button.setEnabled(
             has_scene
         )
 
         self.remove_button.setEnabled(
-            has_entity
+            selected_entity_node
         )

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QStackedWidget,
     QStatusBar,
     QTabWidget,
@@ -21,9 +22,7 @@ from lupix_studio.project.loader import (
     LoadedProject,
     load_project,
 )
-from lupix_studio.project.validator import (
-    validate_project,
-)
+from lupix_studio.project.validator import validate_project
 from lupix_studio.scene.creator import create_scene
 from lupix_studio.scene.model import SceneResource
 from lupix_studio.scene.serializer import SceneSerializer
@@ -45,8 +44,9 @@ from lupix_studio.ui.camera_component_editor import (
 from lupix_studio.ui.collider_component_editor import (
     ColliderComponentEditor,
 )
-from lupix_studio.ui.entity_inspector import (
-    EntityInspector,
+from lupix_studio.ui.entity_inspector import EntityInspector
+from lupix_studio.ui.entity_inspector_panel import (
+    EntityInspectorPanel,
 )
 from lupix_studio.ui.new_project_dialog import (
     NewProjectDialog,
@@ -373,6 +373,10 @@ class MainWindow(QMainWindow):
             self._on_scene_tree_entity_selected
         )
 
+        self.scene_tree.component_selected.connect(
+            self._on_scene_tree_component_selected
+        )
+
         self.scene_tree.scene_changed.connect(
             self._on_scene_changed
         )
@@ -411,36 +415,27 @@ class MainWindow(QMainWindow):
         self.collider_editor = ColliderComponentEditor()
         self.player_editor = PlayerControllerEditor()
 
-        self.entity_tabs = QTabWidget()
-
-        self.entity_tabs.addTab(
-            self.entity_inspector,
-            "Transform",
+        self.entity_panel = EntityInspectorPanel(
+            transform_editor=self.entity_inspector,
+            sprite_editor=self.sprite_editor,
+            camera_editor=self.camera_editor,
+            tilemap_editor=self.tilemap_editor,
+            collider_editor=self.collider_editor,
+            player_editor=self.player_editor,
         )
 
-        self.entity_tabs.addTab(
-            self.sprite_editor,
-            "Sprite",
+        self.entity_scroll = QScrollArea()
+
+        self.entity_scroll.setWidgetResizable(
+            True
         )
 
-        self.entity_tabs.addTab(
-            self.camera_editor,
-            "Camera",
+        self.entity_scroll.setFrameShape(
+            QScrollArea.Shape.NoFrame
         )
 
-        self.entity_tabs.addTab(
-            self.tilemap_editor,
-            "TileMap",
-        )
-
-        self.entity_tabs.addTab(
-            self.collider_editor,
-            "Collider",
-        )
-
-        self.entity_tabs.addTab(
-            self.player_editor,
-            "Player",
+        self.entity_scroll.setWidget(
+            self.entity_panel
         )
 
         self.entity_inspector.entity_changed.connect(
@@ -476,7 +471,7 @@ class MainWindow(QMainWindow):
         )
 
         self.inspector_stack.addWidget(
-            self.entity_tabs
+            self.entity_scroll
         )
 
         self.inspector_dock.setMinimumWidth(
@@ -631,10 +626,8 @@ class MainWindow(QMainWindow):
         )
 
         self.problems.append(
-            
-                f"Resumo: {error_count} erro(s), "
-                f"{warning_count} aviso(s)."
-            
+            f"Resumo: {error_count} erro(s), "
+            f"{warning_count} aviso(s)."
         )
 
         if (
@@ -678,9 +671,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        player = (
-            self.current_scene.player_entity()
-        )
+        player = self.current_scene.player_entity()
 
         if player is None:
             QMessageBox.warning(
@@ -1080,8 +1071,10 @@ class MainWindow(QMainWindow):
             None
         )
 
+        self.entity_panel.collapse_all()
+
         self.inspector_stack.setCurrentWidget(
-            self.entity_tabs
+            self.entity_scroll
         )
 
         self._show_scene_hierarchy()
@@ -1113,10 +1106,8 @@ class MainWindow(QMainWindow):
         path: Path,
     ) -> None:
         try:
-            resource = (
-                self.scene_serializer.load(
-                    path
-                )
+            resource = self.scene_serializer.load(
+                path
             )
 
         except (
@@ -1220,7 +1211,6 @@ class MainWindow(QMainWindow):
         self.workspace.scene_viewport.refresh_entities()
 
         self._save_current_scene()
-
         self._validate_current_scene()
 
     def _save_current_scene(self) -> None:
@@ -1295,7 +1285,7 @@ class MainWindow(QMainWindow):
             return
 
         self.inspector_stack.setCurrentWidget(
-            self.entity_tabs
+            self.entity_scroll
         )
 
         self.entity_inspector.show_entity(
@@ -1341,6 +1331,55 @@ class MainWindow(QMainWindow):
             entity_id
         )
 
+        self.entity_panel.open_section(
+            EntityInspectorPanel.SECTION_TRANSFORM
+        )
+
+    def _on_scene_tree_component_selected(
+        self,
+        entity_id: str,
+        component: str,
+    ) -> None:
+        if self.playing:
+            return
+
+        self.workspace.scene_viewport.select_entity(
+            entity_id
+        )
+
+        self._show_entity_in_inspector(
+            entity_id
+        )
+
+        section_map = {
+            "sprite": (
+                EntityInspectorPanel.SECTION_SPRITE
+            ),
+            "camera": (
+                EntityInspectorPanel.SECTION_CAMERA
+            ),
+            "tilemap": (
+                EntityInspectorPanel.SECTION_TILEMAP
+            ),
+            "collider": (
+                EntityInspectorPanel.SECTION_COLLIDER
+            ),
+            "player": (
+                EntityInspectorPanel.SECTION_PLAYER
+            ),
+        }
+
+        section = section_map.get(
+            component
+        )
+
+        if section is None:
+            return
+
+        self.entity_panel.open_section(
+            section
+        )
+
     def _on_viewport_entity_selected(
         self,
         entity_id: str,
@@ -1354,6 +1393,10 @@ class MainWindow(QMainWindow):
 
         self._show_entity_in_inspector(
             entity_id
+        )
+
+        self.entity_panel.open_section(
+            EntityInspectorPanel.SECTION_TRANSFORM
         )
 
     def _on_viewport_entity_moved(
@@ -1618,7 +1661,7 @@ class MainWindow(QMainWindow):
         self._show_scene_hierarchy()
 
         self.inspector_stack.setCurrentWidget(
-            self.entity_tabs
+            self.entity_scroll
         )
 
         self.statusBar().showMessage(
@@ -1817,9 +1860,7 @@ class MainWindow(QMainWindow):
     def _refresh_recent_projects(
         self,
     ) -> None:
-        projects = (
-            self.recent_projects.load()
-        )
+        projects = self.recent_projects.load()
 
         self.workspace.start_page.set_recent_projects(
             projects
