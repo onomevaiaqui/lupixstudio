@@ -27,6 +27,7 @@ from lupix_studio.project.validator import (
 from lupix_studio.scene.creator import create_scene
 from lupix_studio.scene.model import SceneResource
 from lupix_studio.scene.serializer import SceneSerializer
+from lupix_studio.scene.validator import validate_scene
 from lupix_studio.settings.recent_projects import (
     RecentProjectsManager,
 )
@@ -77,10 +78,7 @@ class MainWindow(QMainWindow):
         self.current_scene_path: Path | None = None
         self.current_scene: SceneResource | None = None
 
-        self.recent_projects = (
-            RecentProjectsManager()
-        )
-
+        self.recent_projects = RecentProjectsManager()
         self.scene_serializer = SceneSerializer()
 
         self.playing = False
@@ -406,29 +404,12 @@ class MainWindow(QMainWindow):
 
         self.asset_inspector = AssetInspector()
 
-        self.entity_inspector = (
-            EntityInspector()
-        )
-
-        self.sprite_editor = (
-            SpriteComponentEditor()
-        )
-
-        self.camera_editor = (
-            CameraComponentEditor()
-        )
-
-        self.tilemap_editor = (
-            TileMapComponentEditor()
-        )
-
-        self.collider_editor = (
-            ColliderComponentEditor()
-        )
-
-        self.player_editor = (
-            PlayerControllerEditor()
-        )
+        self.entity_inspector = EntityInspector()
+        self.sprite_editor = SpriteComponentEditor()
+        self.camera_editor = CameraComponentEditor()
+        self.tilemap_editor = TileMapComponentEditor()
+        self.collider_editor = ColliderComponentEditor()
+        self.player_editor = PlayerControllerEditor()
 
         self.entity_tabs = QTabWidget()
 
@@ -517,7 +498,7 @@ class MainWindow(QMainWindow):
             self,
         )
 
-        tabs = QTabWidget()
+        self.bottom_tabs = QTabWidget()
 
         self.console = QTextEdit()
 
@@ -545,23 +526,25 @@ class MainWindow(QMainWindow):
             self._activate_asset
         )
 
-        tabs.addTab(
+        self.bottom_tabs.addTab(
             self.console,
             "Console",
         )
 
-        tabs.addTab(
-            self.problems,
-            "Problemas",
+        self.problems_tab_index = (
+            self.bottom_tabs.addTab(
+                self.problems,
+                "Problemas",
+            )
         )
 
-        tabs.addTab(
+        self.bottom_tabs.addTab(
             self.asset_browser,
             "Assets",
         )
 
         self.bottom_dock.setWidget(
-            tabs
+            self.bottom_tabs
         )
 
         self.bottom_dock.setMinimumHeight(
@@ -599,6 +582,71 @@ class MainWindow(QMainWindow):
             self.playing
         )
 
+    def _validate_current_scene(
+        self,
+        focus_problems: bool = False,
+    ) -> bool:
+        if (
+            self.current_scene is None
+            or self.current_project is None
+        ):
+            return True
+
+        issues = validate_scene(
+            self.current_scene,
+            self.current_project.root,
+        )
+
+        self.problems.clear()
+
+        if not issues:
+            self.problems.append(
+                "✓ Cena válida."
+            )
+
+            self.problems.append(
+                "Nenhum problema encontrado."
+            )
+
+            return True
+
+        error_count = 0
+        warning_count = 0
+
+        for issue in issues:
+            if issue.level == "error":
+                prefix = "ERRO"
+                error_count += 1
+
+            else:
+                prefix = "AVISO"
+                warning_count += 1
+
+            self.problems.append(
+                f"[{prefix}] {issue.message}"
+            )
+
+        self.problems.append(
+            ""
+        )
+
+        self.problems.append(
+            
+                f"Resumo: {error_count} erro(s), "
+                f"{warning_count} aviso(s)."
+            
+        )
+
+        if (
+            focus_problems
+            and error_count > 0
+        ):
+            self.bottom_tabs.setCurrentIndex(
+                self.problems_tab_index
+            )
+
+        return error_count == 0
+
     def _start_play_preview(self) -> None:
         if self.playing:
             return
@@ -611,6 +659,22 @@ class MainWindow(QMainWindow):
                 self,
                 "Executar",
                 "Abra uma cena antes de executar.",
+            )
+            return
+
+        self._save_current_scene()
+
+        if not self._validate_current_scene(
+            focus_problems=True,
+        ):
+            QMessageBox.warning(
+                self,
+                "Cena inválida",
+                (
+                    "A cena possui erros de configuração.\n\n"
+                    "Corrija os itens exibidos na aba "
+                    "Problemas antes de executar."
+                ),
             )
             return
 
@@ -628,20 +692,6 @@ class MainWindow(QMainWindow):
                 ),
             )
             return
-
-        if player.collider is None:
-            QMessageBox.warning(
-                self,
-                "Executar",
-                (
-                    "O Player não possui Collider.\n\n"
-                    "Adicione um Collider antes "
-                    "de executar a cena."
-                ),
-            )
-            return
-
-        self._save_current_scene()
 
         self.playing = True
 
@@ -663,20 +713,16 @@ class MainWindow(QMainWindow):
         )
 
         self.console.append(
-            
-                "Preview iniciado: "
-                f"{self.current_scene.name}"
-            
+            "Preview iniciado: "
+            f"{self.current_scene.name}"
         )
 
         self.console.append(
-            
-                "Controles: "
-                "A/← esquerda, "
-                "D/→ direita, "
-                "Espaço pular, "
-                "Esc parar."
-            
+            "Controles: "
+            "A/← esquerda, "
+            "D/→ direita, "
+            "Espaço pular, "
+            "Esc parar."
         )
 
         self.setWindowTitle(
@@ -715,17 +761,13 @@ class MainWindow(QMainWindow):
             self._show_scene_hierarchy()
 
             self.statusBar().showMessage(
-                
-                    "Preview encerrado. "
-                    "Cena restaurada."
-                
+                "Preview encerrado. "
+                "Cena restaurada."
             )
 
             self.console.append(
-                
-                    "Preview encerrado. "
-                    "Estado de runtime descartado."
-                
+                "Preview encerrado. "
+                "Estado de runtime descartado."
             )
 
             self.setWindowTitle(
@@ -734,6 +776,7 @@ class MainWindow(QMainWindow):
                 "Lupix Studio"
             )
 
+        self._validate_current_scene()
         self._update_play_actions()
 
     def _on_new_project(self) -> None:
@@ -899,6 +942,8 @@ class MainWindow(QMainWindow):
             None
         )
 
+        self.problems.clear()
+
         self.inspector_stack.setCurrentWidget(
             self.asset_inspector
         )
@@ -922,7 +967,6 @@ class MainWindow(QMainWindow):
         )
 
         self._validate_current_project()
-
         self._update_play_actions()
 
     def _on_new_scene(self) -> None:
@@ -1061,6 +1105,7 @@ class MainWindow(QMainWindow):
             "Lupix Studio"
         )
 
+        self._validate_current_scene()
         self._update_play_actions()
 
     def _open_scene_file(
@@ -1139,10 +1184,8 @@ class MainWindow(QMainWindow):
         )
 
         self.setWindowTitle(
-            
-                f"{self.current_project.name} "
-                "- Lupix Studio"
-            
+            f"{self.current_project.name} "
+            "- Lupix Studio"
         )
 
         self.statusBar().showMessage(
@@ -1178,6 +1221,8 @@ class MainWindow(QMainWindow):
 
         self._save_current_scene()
 
+        self._validate_current_scene()
+
     def _save_current_scene(self) -> None:
         if (
             self.current_scene is None
@@ -1202,6 +1247,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Cena salva: {self.current_scene.name}"
         )
+
+        self._validate_current_scene()
 
     def _show_entity_in_inspector(
         self,
@@ -1347,6 +1394,8 @@ class MainWindow(QMainWindow):
         self.workspace.scene_viewport.update_entity(
             entity_id
         )
+
+        self.scene_tree.refresh()
 
         self._save_current_scene()
 
@@ -1577,10 +1626,8 @@ class MainWindow(QMainWindow):
         )
 
         self.console.append(
-            
-                "Retorno do TileMap Editor "
-                "para a cena."
-            
+            "Retorno do TileMap Editor "
+            "para a cena."
         )
 
         self.setWindowTitle(
@@ -1588,6 +1635,8 @@ class MainWindow(QMainWindow):
             f"{self.current_project.name} - "
             "Lupix Studio"
         )
+
+        self._validate_current_scene()
 
     def _import_png(
         self,
@@ -1656,10 +1705,8 @@ class MainWindow(QMainWindow):
             )
 
         self.statusBar().showMessage(
-            
-                "Asset importado: "
-                f"{imported.destination.name}"
-            
+            "Asset importado: "
+            f"{imported.destination.name}"
         )
 
     def _show_asset_in_inspector(
@@ -1746,10 +1793,8 @@ class MainWindow(QMainWindow):
 
         if not issues:
             self.problems.append(
-                
-                    "Projeto válido para "
-                    "desenvolvimento Lupi."
-                
+                "Projeto válido para "
+                "desenvolvimento Lupi."
             )
 
             self.statusBar().showMessage(
