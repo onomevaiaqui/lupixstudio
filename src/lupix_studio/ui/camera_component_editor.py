@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
+    QLabel,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -16,6 +18,51 @@ from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
 )
+
+
+class VisibleCheckBox(QCheckBox):
+    """Checkbox consistente com o tema escuro do Lupix."""
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+
+        if not self.isChecked():
+            return
+
+        painter = QPainter(self)
+
+        painter.setRenderHint(
+            QPainter.RenderHint.Antialiasing,
+            True,
+        )
+
+        indicator_size = 18
+
+        top = (
+            self.rect().height()
+            - indicator_size
+        ) // 2
+
+        pen = QPen(
+            QColor("#ffffff"),
+            2.2,
+        )
+
+        painter.setPen(pen)
+
+        painter.drawLine(
+            4,
+            top + 9,
+            8,
+            top + 13,
+        )
+
+        painter.drawLine(
+            8,
+            top + 13,
+            15,
+            top + 5,
+        )
 
 
 class CameraComponentEditor(QWidget):
@@ -31,63 +78,138 @@ class CameraComponentEditor(QWidget):
 
         self._updating = False
 
-        self.active_checkbox = QCheckBox()
+        self.setStyleSheet(
+            """
+            QSpinBox,
+            QDoubleSpinBox {
+                min-height: 26px;
+            }
 
-        self.width_spin = QSpinBox()
-        self.width_spin.setRange(
-            1,
-            8192,
-        )
-        self.width_spin.setValue(
-            480
+            QPushButton {
+                min-height: 30px;
+            }
+
+            QLabel#CameraHint {
+                color: #8d929b;
+            }
+
+            QPushButton#RemoveCameraButton {
+                color: #ff6565;
+                border: 1px solid #d74646;
+            }
+            """
         )
 
-        self.height_spin = QSpinBox()
-        self.height_spin.setRange(
-            1,
-            8192,
-        )
-        self.height_spin.setValue(
-            270
+        self.status_label = QLabel(
+            "Nenhuma entidade selecionada."
         )
 
-        self.zoom_spin = QDoubleSpinBox()
-        self.zoom_spin.setRange(
-            0.01,
-            100.0,
+        self.status_label.setObjectName(
+            "CameraHint"
         )
-        self.zoom_spin.setDecimals(
-            2
-        )
-        self.zoom_spin.setSingleStep(
-            0.1
-        )
-        self.zoom_spin.setValue(
-            1.0
+
+        self.status_label.setWordWrap(
+            True
         )
 
         self.add_button = QPushButton(
             "Adicionar Camera"
         )
 
-        self.remove_button = QPushButton(
-            "Remover Camera"
+        self.active_checkbox = VisibleCheckBox(
+            "Camera ativa"
+        )
+
+        self.width_spin = QSpinBox()
+
+        self.width_spin.setRange(
+            1,
+            16384,
+        )
+
+        self.width_spin.setValue(
+            480
+        )
+
+        self.height_spin = QSpinBox()
+
+        self.height_spin.setRange(
+            1,
+            16384,
+        )
+
+        self.height_spin.setValue(
+            270
+        )
+
+        self.zoom_spin = QDoubleSpinBox()
+
+        self.zoom_spin.setRange(
+            0.05,
+            32.0,
+        )
+
+        self.zoom_spin.setDecimals(
+            2
+        )
+
+        self.zoom_spin.setSingleStep(
+            0.10
+        )
+
+        self.zoom_spin.setValue(
+            1.0
+        )
+
+        self.offset_x_spin = QDoubleSpinBox()
+
+        self.offset_x_spin.setRange(
+            -100000.0,
+            100000.0,
+        )
+
+        self.offset_x_spin.setDecimals(
+            1
+        )
+
+        self.offset_y_spin = QDoubleSpinBox()
+
+        self.offset_y_spin.setRange(
+            -100000.0,
+            100000.0,
+        )
+
+        self.offset_y_spin.setDecimals(
+            1
+        )
+
+        self.limit_checkbox = VisibleCheckBox(
+            "Limitar aos limites da cena"
+        )
+
+        self.follow_label = QLabel(
+            "A Camera acompanha automaticamente a entidade "
+            "que possui este componente. Se ela estiver no Player, "
+            "acompanhará o Player durante o jogo."
+        )
+
+        self.follow_label.setObjectName(
+            "CameraHint"
+        )
+
+        self.follow_label.setWordWrap(
+            True
         )
 
         form = QFormLayout()
 
         form.addRow(
-            "Ativa:",
-            self.active_checkbox,
-        )
-
-        form.addRow(
-            "Largura:",
+            "Largura visível:",
             self.width_spin,
         )
 
         form.addRow(
-            "Altura:",
+            "Altura visível:",
             self.height_spin,
         )
 
@@ -96,16 +218,61 @@ class CameraComponentEditor(QWidget):
             self.zoom_spin,
         )
 
+        form.addRow(
+            "Offset X:",
+            self.offset_x_spin,
+        )
+
+        form.addRow(
+            "Offset Y:",
+            self.offset_y_spin,
+        )
+
+        self.remove_button = QPushButton(
+            "Remover Camera"
+        )
+
+        self.remove_button.setObjectName(
+            "RemoveCameraButton"
+        )
+
         layout = QVBoxLayout(
             self
+        )
+
+        layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        layout.setSpacing(
+            8
+        )
+
+        layout.addWidget(
+            self.status_label
         )
 
         layout.addWidget(
             self.add_button
         )
 
+        layout.addWidget(
+            self.active_checkbox
+        )
+
         layout.addLayout(
             form
+        )
+
+        layout.addWidget(
+            self.limit_checkbox
+        )
+
+        layout.addWidget(
+            self.follow_label
         )
 
         layout.addWidget(
@@ -114,28 +281,40 @@ class CameraComponentEditor(QWidget):
 
         layout.addStretch()
 
-        self.active_checkbox.toggled.connect(
-            self._apply_values
-        )
-
-        self.width_spin.valueChanged.connect(
-            self._apply_values
-        )
-
-        self.height_spin.valueChanged.connect(
-            self._apply_values
-        )
-
-        self.zoom_spin.valueChanged.connect(
-            self._apply_values
-        )
-
         self.add_button.clicked.connect(
             self._add_camera
         )
 
         self.remove_button.clicked.connect(
             self._remove_camera
+        )
+
+        self.active_checkbox.toggled.connect(
+            self._apply
+        )
+
+        self.width_spin.valueChanged.connect(
+            self._apply
+        )
+
+        self.height_spin.valueChanged.connect(
+            self._apply
+        )
+
+        self.zoom_spin.valueChanged.connect(
+            self._apply
+        )
+
+        self.offset_x_spin.valueChanged.connect(
+            self._apply
+        )
+
+        self.offset_y_spin.valueChanged.connect(
+            self._apply
+        )
+
+        self.limit_checkbox.toggled.connect(
+            self._apply
         )
 
         self.set_context(
@@ -151,74 +330,55 @@ class CameraComponentEditor(QWidget):
         self.scene = scene
         self.entity = entity
 
-        self._refresh_values()
+        self._refresh()
 
-    def _refresh_values(self) -> None:
+    def _refresh(self) -> None:
         self._updating = True
 
         try:
             if self.entity is None:
-                self.setEnabled(
+                self.status_label.setText(
+                    "Nenhuma entidade selecionada."
+                )
+
+                self.add_button.setVisible(
                     False
                 )
-                return
 
-            self.setEnabled(
-                True
-            )
+                self._set_camera_controls_enabled(
+                    False
+                )
+
+                return
 
             camera = self.entity.camera
 
-            has_camera = (
-                camera is not None
-            )
-
-            self.add_button.setVisible(
-                not has_camera
-            )
-
-            self.remove_button.setVisible(
-                has_camera
-            )
-
-            self.active_checkbox.setEnabled(
-                has_camera
-            )
-
-            self.width_spin.setEnabled(
-                has_camera
-            )
-
-            self.height_spin.setEnabled(
-                has_camera
-            )
-
-            self.zoom_spin.setEnabled(
-                has_camera
-            )
-
             if camera is None:
-                self.active_checkbox.setChecked(
+                self.status_label.setText(
+                    "Esta entidade ainda não possui Camera."
+                )
+
+                self.add_button.setVisible(
+                    True
+                )
+
+                self._set_camera_controls_enabled(
                     False
                 )
 
-                self.width_spin.setValue(
-                    self.scene.width
-                    if self.scene is not None
-                    else 480
-                )
-
-                self.height_spin.setValue(
-                    self.scene.height
-                    if self.scene is not None
-                    else 270
-                )
-
-                self.zoom_spin.setValue(
-                    1.0
-                )
-
                 return
+
+            self.status_label.setText(
+                "Camera anexada a esta entidade."
+            )
+
+            self.add_button.setVisible(
+                False
+            )
+
+            self._set_camera_controls_enabled(
+                True
+            )
 
             self.active_checkbox.setChecked(
                 camera.active
@@ -236,11 +396,66 @@ class CameraComponentEditor(QWidget):
                 camera.zoom
             )
 
+            self.offset_x_spin.setValue(
+                camera.offset_x
+            )
+
+            self.offset_y_spin.setValue(
+                camera.offset_y
+            )
+
+            self.limit_checkbox.setChecked(
+                camera.limit_to_scene
+            )
+
         finally:
             self._updating = False
 
+    def _set_camera_controls_enabled(
+        self,
+        enabled: bool,
+    ) -> None:
+        self.active_checkbox.setVisible(
+            enabled
+        )
+
+        self.width_spin.setVisible(
+            enabled
+        )
+
+        self.height_spin.setVisible(
+            enabled
+        )
+
+        self.zoom_spin.setVisible(
+            enabled
+        )
+
+        self.offset_x_spin.setVisible(
+            enabled
+        )
+
+        self.offset_y_spin.setVisible(
+            enabled
+        )
+
+        self.limit_checkbox.setVisible(
+            enabled
+        )
+
+        self.follow_label.setVisible(
+            enabled
+        )
+
+        self.remove_button.setVisible(
+            enabled
+        )
+
     def _add_camera(self) -> None:
         if self.entity is None:
+            return
+
+        if self.entity.camera is not None:
             return
 
         width = 480
@@ -251,13 +466,18 @@ class CameraComponentEditor(QWidget):
             height = self.scene.height
 
         self.entity.camera = CameraComponent(
+            active=False,
             width=width,
             height=height,
+            zoom=1.0,
+            offset_x=0.0,
+            offset_y=0.0,
+            limit_to_scene=True,
         )
 
         self.entity.refresh_kind()
 
-        self._refresh_values()
+        self._refresh()
 
         self.camera_changed.emit(
             self.entity.id
@@ -268,33 +488,43 @@ class CameraComponentEditor(QWidget):
             return
 
         self.entity.camera = None
+
         self.entity.refresh_kind()
 
-        self._refresh_values()
+        self._refresh()
 
         self.camera_changed.emit(
             self.entity.id
         )
 
-    def _apply_values(self) -> None:
+    def _apply(self) -> None:
+        if self._updating:
+            return
+
         if (
             self.entity is None
             or self.entity.camera is None
-            or self._updating
         ):
             return
 
         camera = self.entity.camera
 
-        if (
+        requested_active = (
             self.active_checkbox.isChecked()
+        )
+
+        if (
+            requested_active
             and self.scene is not None
         ):
             self.scene.activate_camera(
                 self.entity.id
             )
+
         else:
-            camera.active = False
+            camera.active = (
+                requested_active
+            )
 
         camera.width = (
             self.width_spin.value()
@@ -304,8 +534,21 @@ class CameraComponentEditor(QWidget):
             self.height_spin.value()
         )
 
-        camera.zoom = (
-            self.zoom_spin.value()
+        camera.zoom = max(
+            0.05,
+            self.zoom_spin.value(),
+        )
+
+        camera.offset_x = (
+            self.offset_x_spin.value()
+        )
+
+        camera.offset_y = (
+            self.offset_y_spin.value()
+        )
+
+        camera.limit_to_scene = (
+            self.limit_checkbox.isChecked()
         )
 
         self.camera_changed.emit(

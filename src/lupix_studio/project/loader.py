@@ -53,18 +53,60 @@ def load_project(path: Path) -> LoadedProject:
     if not name:
         raise ValueError("O projeto não possui um nome válido.")
 
-    resolution = data.get("resolution", {})
+    platform = str(
+        data.get(
+            "platform",
+            "lupi",
+        )
+    ).strip().lower()
 
-    if not isinstance(resolution, dict):
-        raise TypeError("A resolução do projeto é inválida.")
+    if platform not in {
+        "lupi",
+        "pc",
+    }:
+        platform = "lupi"
 
-    width = int(resolution.get("width", 480))
-    height = int(resolution.get("height", 270))
+    resolution = data.get(
+        "resolution",
+        {},
+    )
+
+    if not isinstance(
+        resolution,
+        dict,
+    ):
+        raise TypeError(
+            "A resolução do projeto é inválida."
+        )
+
+    width = max(
+        1,
+        int(
+            resolution.get(
+                "width",
+                480,
+            )
+        ),
+    )
+
+    height = max(
+        1,
+        int(
+            resolution.get(
+                "height",
+                270,
+            )
+        ),
+    )
+
+    if platform == "lupi":
+        width = 480
+        height = 270
 
     return LoadedProject(
         name=name,
         root=project_file.parent,
-        platform=str(data.get("platform", "lupi")),
+        platform=platform,
         development_mode=str(
             data.get("development_mode", "blueprint")
         ),

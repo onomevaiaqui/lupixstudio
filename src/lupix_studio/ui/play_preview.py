@@ -235,10 +235,89 @@ class PlayCanvas(QGraphicsView):
         visible_width = width / zoom
         visible_height = height / zoom
 
-        camera_rect = QRectF(
+        center_x = (
             float(camera_entity.transform.x)
-            - visible_width / 2.0,
+            + float(camera.offset_x)
+        )
+
+        center_y = (
             float(camera_entity.transform.y)
+            + float(camera.offset_y)
+        )
+
+        if camera.limit_to_scene:
+            half_width = (
+                visible_width / 2.0
+            )
+
+            half_height = (
+                visible_height / 2.0
+            )
+
+            world_left = (
+                self.runtime.world_left
+            )
+
+            world_top = (
+                self.runtime.world_top
+            )
+
+            world_right = (
+                self.runtime.world_right
+            )
+
+            world_bottom = (
+                self.runtime.world_bottom
+            )
+
+            world_width = (
+                world_right
+                - world_left
+            )
+
+            world_height = (
+                world_bottom
+                - world_top
+            )
+
+            if visible_width <= world_width:
+                center_x = max(
+                    world_left
+                    + half_width,
+                    min(
+                        world_right
+                        - half_width,
+                        center_x,
+                    ),
+                )
+
+            else:
+                center_x = (
+                    world_left
+                    + world_right
+                ) / 2.0
+
+            if visible_height <= world_height:
+                center_y = max(
+                    world_top
+                    + half_height,
+                    min(
+                        world_bottom
+                        - half_height,
+                        center_y,
+                    ),
+                )
+
+            else:
+                center_y = (
+                    world_top
+                    + world_bottom
+                ) / 2.0
+
+        camera_rect = QRectF(
+            center_x
+            - visible_width / 2.0,
+            center_y
             - visible_height / 2.0,
             visible_width,
             visible_height,
@@ -250,8 +329,8 @@ class PlayCanvas(QGraphicsView):
         )
 
         self.centerOn(
-            float(camera_entity.transform.x),
-            float(camera_entity.transform.y),
+            center_x,
+            center_y,
         )
 
     def use_active_camera(self) -> None:

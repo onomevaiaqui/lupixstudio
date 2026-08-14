@@ -32,6 +32,7 @@ from lupix_studio.assets.registry import (
     AssetRecord,
     AssetRegistry,
 )
+from lupix_studio.project.loader import load_project
 from lupix_studio.tilemap.model import (
     TileLayer,
     TileMapResource,
@@ -330,6 +331,12 @@ class TileMapCanvas(QGraphicsView):
 
         self.resource: TileMapResource | None = None
 
+        self.output_width = 480
+        self.output_height = 270
+
+        self.workspace_columns = 512
+        self.workspace_rows = 256
+
         self.active_layer_index = 0
         self.selected_tile_id: int | None = None
 
@@ -364,28 +371,78 @@ class TileMapCanvas(QGraphicsView):
     ) -> None:
         self.resource = resource
 
-        map_width = (
-            resource.width
-            * resource.tile_width
+        self._update_workspace_rect()
+
+        self.viewport().update()
+
+    def set_output_size(
+        self,
+        width: int,
+        height: int,
+    ) -> None:
+        self.output_width = max(
+            1,
+            int(width),
         )
 
-        map_height = (
-            resource.height
-            * resource.tile_height
+        self.output_height = max(
+            1,
+            int(height),
         )
 
-        margin = 64
+        self._update_workspace_rect()
+        self.viewport().update()
+
+    def _update_workspace_rect(
+        self,
+    ) -> None:
+        if self.resource is None:
+            return
+
+        tile_width = max(
+            1,
+            self.resource.tile_width,
+        )
+
+        tile_height = max(
+            1,
+            self.resource.tile_height,
+        )
+
+        used_width = max(
+            self.resource.width
+            * tile_width,
+            self.output_width,
+        )
+
+        used_height = max(
+            self.resource.height
+            * tile_height,
+            self.output_height,
+        )
+
+        workspace_width = max(
+            self.workspace_columns
+            * tile_width,
+            self.output_width * 4,
+            used_width + 2048,
+        )
+
+        workspace_height = max(
+            self.workspace_rows
+            * tile_height,
+            self.output_height * 4,
+            used_height + 1024,
+        )
 
         self.graphics_scene.setSceneRect(
             QRectF(
-                -margin,
-                -margin,
-                map_width + margin * 2,
-                map_height + margin * 2,
+                -1024,
+                -1024,
+                workspace_width + 2048,
+                workspace_height + 2048,
             )
         )
-
-        self.viewport().update()
 
     def set_tileset(
         self,
@@ -466,17 +523,15 @@ class TileMapCanvas(QGraphicsView):
         if self.resource is None:
             return
 
-        map_rect = QRectF(
+        output_rect = QRectF(
             0,
             0,
-            self.resource.width
-            * self.resource.tile_width,
-            self.resource.height
-            * self.resource.tile_height,
+            self.output_width,
+            self.output_height,
         )
 
         self.fitInView(
-            map_rect,
+            output_rect,
             Qt.AspectRatioMode.KeepAspectRatio,
         )
 
@@ -520,8 +575,8 @@ class TileMapCanvas(QGraphicsView):
         if (
             column < 0
             or row < 0
-            or column >= self.resource.width
-            or row >= self.resource.height
+            or column >= self.workspace_columns
+            or row >= self.workspace_rows
         ):
             return None
 
@@ -549,6 +604,12 @@ class TileMapCanvas(QGraphicsView):
             return False
 
         column, row = cell
+
+        if not erase:
+            self._ensure_resource_contains(
+                column,
+                row,
+            )
 
         if erase:
             previous = layer.tile(
@@ -597,6 +658,31 @@ class TileMapCanvas(QGraphicsView):
         self.viewport().update()
 
         return True
+
+    def _ensure_resource_contains(
+        self,
+        column: int,
+        row: int,
+    ) -> None:
+        if self.resource is None:
+            return
+
+        changed = False
+
+        if column >= self.resource.width:
+            self.resource.width = (
+                column + 1
+            )
+            changed = True
+
+        if row >= self.resource.height:
+            self.resource.height = (
+                row + 1
+            )
+            changed = True
+
+        if changed:
+            self._update_workspace_rect()
 
     def _fill_cell(
         self,
@@ -957,25 +1043,12 @@ class TileMapCanvas(QGraphicsView):
         if self.resource is None:
             return
 
-        map_width = (
-            self.resource.width
-            * self.resource.tile_width
-        )
-
-        map_height = (
-            self.resource.height
-            * self.resource.tile_height
-        )
-
-        map_rect = QRectF(
-            0,
-            0,
-            map_width,
-            map_height,
+        workspace = (
+            self.graphics_scene.sceneRect()
         )
 
         painter.fillRect(
-            map_rect,
+            workspace,
             QColor("#202225"),
         )
 
@@ -983,12 +1056,26 @@ class TileMapCanvas(QGraphicsView):
             painter
         )
 
+        visible = rect.intersected(
+            workspace
+        )
+
+        tile_width = max(
+            1,
+            self.resource.tile_width,
+        )
+
+        tile_height = max(
+            1,
+            self.resource.tile_height,
+        )
+
         grid_pen = QPen(
             QColor(
                 255,
                 255,
                 255,
-                45,
+                85,
             ),
             1,
         )
@@ -1001,54 +1088,151 @@ class TileMapCanvas(QGraphicsView):
             grid_pen
         )
 
-        x = 0
-
-        while x <= map_width:
-            painter.drawLine(
-                QPointF(
-                    x,
-                    0,
-                ),
-                QPointF(
-                    x,
-                    map_height,
-                ),
-            )
-
-            x += self.resource.tile_width
-
-        y = 0
-
-        while y <= map_height:
-            painter.drawLine(
-                QPointF(
-                    0,
-                    y,
-                ),
-                QPointF(
-                    map_width,
-                    y,
-                ),
-            )
-
-            y += self.resource.tile_height
-
-        border_pen = QPen(
-            QColor("#8b8e96"),
-            1,
+        first_column = max(
+            0,
+            int(
+                visible.left()
+                // tile_width
+            ),
         )
 
-        border_pen.setCosmetic(
+        last_column = min(
+            self.workspace_columns,
+            int(
+                visible.right()
+                // tile_width
+            ) + 1,
+        )
+
+        first_row = max(
+            0,
+            int(
+                visible.top()
+                // tile_height
+            ),
+        )
+
+        last_row = min(
+            self.workspace_rows,
+            int(
+                visible.bottom()
+                // tile_height
+            ) + 1,
+        )
+
+        top = 0.0
+        bottom = (
+            self.workspace_rows
+            * tile_height
+        )
+
+        left = 0.0
+        right = (
+            self.workspace_columns
+            * tile_width
+        )
+
+        for column in range(
+            first_column,
+            last_column + 1,
+        ):
+            x = (
+                column
+                * tile_width
+            )
+
+            painter.drawLine(
+                QPointF(
+                    x,
+                    top,
+                ),
+                QPointF(
+                    x,
+                    bottom,
+                ),
+            )
+
+        for row in range(
+            first_row,
+            last_row + 1,
+        ):
+            y = (
+                row
+                * tile_height
+            )
+
+            painter.drawLine(
+                QPointF(
+                    left,
+                    y,
+                ),
+                QPointF(
+                    right,
+                    y,
+                ),
+            )
+
+        output_rect = QRectF(
+            0,
+            0,
+            self.output_width,
+            self.output_height,
+        )
+
+        output_pen = QPen(
+            QColor(
+                93,
+                209,
+                255,
+                220,
+            ),
+            2,
+        )
+
+        output_pen.setCosmetic(
             True
         )
 
         painter.setPen(
-            border_pen
+            output_pen
         )
 
         painter.drawRect(
-            map_rect
+            output_rect
         )
+
+        used_rect = QRectF(
+            0,
+            0,
+            self.resource.width
+            * tile_width,
+            self.resource.height
+            * tile_height,
+        )
+
+        used_pen = QPen(
+            QColor(
+                235,
+                196,
+                85,
+                120,
+            ),
+            1,
+            Qt.PenStyle.DashLine,
+        )
+
+        used_pen.setCosmetic(
+            True
+        )
+
+        painter.setPen(
+            used_pen
+        )
+
+        painter.drawRect(
+            used_rect
+        )
+
 
     def _draw_tiles(
         self,
@@ -1105,6 +1289,7 @@ class TileMapCanvas(QGraphicsView):
                 except (
                     ValueError,
                     TypeError,
+                    AttributeError,
                 ):
                     continue
 
@@ -1183,9 +1368,11 @@ class TileMapCanvas(QGraphicsView):
 
         for key in layer.cells:
             try:
-                column_text, row_text = key.split(
-                    ",",
-                    maxsplit=1,
+                column_text, row_text = (
+                    key.split(
+                        ",",
+                        maxsplit=1,
+                    )
                 )
 
                 column = int(
@@ -1214,6 +1401,7 @@ class TileMapCanvas(QGraphicsView):
             painter.drawRect(
                 rect
             )
+
 
 class TileMapEditor(QWidget):
     """Editor visual de TileMaps."""
@@ -1332,7 +1520,11 @@ class TileMapEditor(QWidget):
         )
 
         self.fit_button = QPushButton(
-            "Ajustar"
+            "Ajustar Saída"
+        )
+
+        self.output_info = QLabel(
+            "Saída: 480 × 270"
         )
 
         form = QFormLayout()
@@ -1390,6 +1582,14 @@ class TileMapEditor(QWidget):
 
         tools.addWidget(
             self.fit_button
+        )
+
+        tools.addSpacing(
+            16
+        )
+
+        tools.addWidget(
+            self.output_info
         )
 
         tools.addStretch()
@@ -1593,6 +1793,41 @@ class TileMapEditor(QWidget):
                 self.resource_path
             )
         )
+
+        try:
+            project = load_project(
+                self.project_root
+            )
+
+            self.canvas.set_output_size(
+                project.width,
+                project.height,
+            )
+
+            platform_label = (
+                "Lupi"
+                if project.platform == "lupi"
+                else "PC"
+            )
+
+            self.output_info.setText(
+                f"Saída {platform_label}: "
+                f"{project.width} × {project.height}"
+            )
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            self.canvas.set_output_size(
+                480,
+                270,
+            )
+
+            self.output_info.setText(
+                "Saída: 480 × 270"
+            )
 
         self.selected_tile_id = None
 

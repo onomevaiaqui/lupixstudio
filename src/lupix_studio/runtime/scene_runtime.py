@@ -91,6 +91,16 @@ class SceneRuntime:
             CollisionRect
         ] = []
 
+        self.world_left = 0.0
+        self.world_top = 0.0
+        self.world_right = float(
+            self.scene.width
+        )
+        self.world_bottom = float(
+            self.scene.height
+        )
+
+        self._load_world_bounds()
         self._load_tilemap_collisions()
 
         self.running = False
@@ -798,6 +808,147 @@ class SceneRuntime:
             and first.bottom > second.top
         )
 
+    def _load_world_bounds(
+        self,
+    ) -> None:
+        if self.project_root is None:
+            return
+
+        serializer = TileMapSerializer()
+
+        for entity in self.scene.entities:
+            tilemap_component = (
+                entity.tilemap
+            )
+
+            if (
+                tilemap_component is None
+                or not tilemap_component.resource_path
+            ):
+                continue
+
+            path = (
+                self.project_root
+                / tilemap_component.resource_path
+            )
+
+            if not path.exists():
+                continue
+
+            try:
+                tilemap = serializer.load(
+                    path
+                )
+
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+            ):
+                continue
+
+            occupied_cells: list[
+                tuple[int, int]
+            ] = []
+
+            for layer in tilemap.layers:
+                for key in layer.cells:
+                    try:
+                        column_text, row_text = (
+                            key.split(
+                                ",",
+                                maxsplit=1,
+                            )
+                        )
+
+                        occupied_cells.append(
+                            (
+                                int(column_text),
+                                int(row_text),
+                            )
+                        )
+
+                    except (
+                        ValueError,
+                        AttributeError,
+                    ):
+                        continue
+
+            if not occupied_cells:
+                continue
+
+            min_column = min(
+                column
+                for column, _row
+                in occupied_cells
+            )
+
+            max_column = max(
+                column
+                for column, _row
+                in occupied_cells
+            )
+
+            min_row = min(
+                row
+                for _column, row
+                in occupied_cells
+            )
+
+            max_row = max(
+                row
+                for _column, row
+                in occupied_cells
+            )
+
+            x1 = (
+                entity.transform.x
+                + min_column
+                * tilemap.tile_width
+            )
+
+            y1 = (
+                entity.transform.y
+                + min_row
+                * tilemap.tile_height
+            )
+
+            x2 = (
+                entity.transform.x
+                + (max_column + 1)
+                * tilemap.tile_width
+            )
+
+            y2 = (
+                entity.transform.y
+                + (max_row + 1)
+                * tilemap.tile_height
+            )
+
+            self.world_left = min(
+                self.world_left,
+                float(x1),
+                float(x2),
+            )
+
+            self.world_top = min(
+                self.world_top,
+                float(y1),
+                float(y2),
+            )
+
+            self.world_right = max(
+                self.world_right,
+                float(x1),
+                float(x2),
+            )
+
+            self.world_bottom = max(
+                self.world_bottom,
+                float(y1),
+                float(y2),
+            )
+
     def _load_tilemap_collisions(
         self,
     ) -> None:
@@ -915,12 +1066,13 @@ class SceneRuntime:
         )
 
         left_limit = (
-            half_width
+            self.world_left
+            + half_width
             - collider.offset_x
         )
 
         right_limit = (
-            self.scene.width
+            self.world_right
             - half_width
             - collider.offset_x
         )
@@ -953,7 +1105,7 @@ class SceneRuntime:
             return
 
         floor_y = (
-            self.scene.height
+            self.world_bottom
             - collider.height / 2.0
             - collider.offset_y
         )
@@ -1009,7 +1161,7 @@ class SceneRuntime:
                 return
 
         floor_y = (
-            self.scene.height
+            self.world_bottom
             - collider.height / 2.0
             - collider.offset_y
         )

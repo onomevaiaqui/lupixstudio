@@ -34,7 +34,7 @@ def create_project(config: ProjectConfig) -> None:
         )
 
     project_data = {
-        "format": 1,
+        "format": 2,
         "name": config.name,
         "platform": config.platform,
         "development_mode": config.development_mode.value,
@@ -54,35 +54,38 @@ def create_project(config: ProjectConfig) -> None:
         encoding="utf-8",
     )
 
-    game_lua = """-- Gerado pelo Lupix Studio
--- Plataforma principal: Lupi
--- Resolução padrão: 480x270
+    platform_name = (
+        "Lupi"
+        if config.platform == "lupi"
+        else "PC"
+    )
 
-function update(frame)
-end
-"""
+    game_lua = (
+        "-- Gerado pelo Lupix Studio\n"
+        f"-- Plataforma principal: {platform_name}\n"
+        f"-- Resolução de saída: "
+        f"{config.width}x{config.height}\n\n"
+        "function update(frame)\n"
+        "end\n"
+    )
 
     (project_dir / config.entry_point).write_text(
         game_lua,
         encoding="utf-8",
     )
 
-    readme = f"""# {config.name}
-
-Projeto criado com o Lupix Studio.
-
-## Plataforma principal
-
-Lupi
-
-## Resolução
-
-{config.width}x{config.height}
-
-## Entrada
-
-{config.entry_point}
-"""
+    readme = (
+        f"# {config.name}\n\n"
+        "Projeto criado com o Lupix Studio.\n\n"
+        "## Plataforma principal\n\n"
+        f"{platform_name}\n\n"
+        "## Resolução de saída\n\n"
+        f"{config.width}x{config.height}\n\n"
+        "A resolução define apenas a área exibida ao jogador.\n"
+        "O mundo e os TileMaps podem ser maiores que a saída.\n\n"
+        "## Entrada\n\n"
+        f"{config.entry_point}\n"
+    )
 
     (project_dir / "README.md").write_text(
         readme,

@@ -63,6 +63,13 @@ class SceneCanvas(QGraphicsView):
         self.scene_width = 480
         self.scene_height = 270
 
+        self.editor_rect = QRectF(
+            -2048,
+            -2048,
+            12288,
+            8192,
+        )
+
         self.grid_size = 16
         self.grid_visible = True
 
@@ -133,17 +140,25 @@ class SceneCanvas(QGraphicsView):
             int(height),
         )
 
-        margin = 512
+        editor_width = max(
+            8192,
+            self.scene_width * 8,
+        )
+
+        editor_height = max(
+            4096,
+            self.scene_height * 8,
+        )
+
+        self.editor_rect = QRectF(
+            -2048,
+            -2048,
+            editor_width + 4096,
+            editor_height + 4096,
+        )
 
         self.graphics_scene.setSceneRect(
-            QRectF(
-                -margin,
-                -margin,
-                self.scene_width
-                + margin * 2,
-                self.scene_height
-                + margin * 2,
-            )
+            self.editor_rect
         )
 
         self.viewport().update()
@@ -1035,8 +1050,10 @@ class SceneCanvas(QGraphicsView):
         )
 
         item = QGraphicsRectItem(
-            -width / 2,
-            -height / 2,
+            -width / 2
+            + camera.offset_x,
+            -height / 2
+            + camera.offset_y,
             width,
             height,
         )
@@ -1421,87 +1438,133 @@ class SceneCanvas(QGraphicsView):
             QColor("#111216"),
         )
 
-        game_rect = QRectF(
+        painter.fillRect(
+            self.editor_rect,
+            QColor("#202225"),
+        )
+
+        if self.grid_visible:
+            grid = max(
+                1,
+                self.grid_size,
+            )
+
+            visible = rect.intersected(
+                self.editor_rect
+            )
+
+            grid_pen = QPen(
+                QColor(
+                    255,
+                    255,
+                    255,
+                    28,
+                ),
+                1,
+            )
+
+            grid_pen.setCosmetic(
+                True
+            )
+
+            painter.setPen(
+                grid_pen
+            )
+
+            first_x = (
+                int(
+                    visible.left()
+                    // grid
+                )
+                * grid
+            )
+
+            last_x = (
+                int(
+                    visible.right()
+                    // grid
+                )
+                * grid
+                + grid
+            )
+
+            first_y = (
+                int(
+                    visible.top()
+                    // grid
+                )
+                * grid
+            )
+
+            last_y = (
+                int(
+                    visible.bottom()
+                    // grid
+                )
+                * grid
+                + grid
+            )
+
+            x = first_x
+
+            while x <= last_x:
+                painter.drawLine(
+                    QPointF(
+                        x,
+                        visible.top(),
+                    ),
+                    QPointF(
+                        x,
+                        visible.bottom(),
+                    ),
+                )
+
+                x += grid
+
+            y = first_y
+
+            while y <= last_y:
+                painter.drawLine(
+                    QPointF(
+                        visible.left(),
+                        y,
+                    ),
+                    QPointF(
+                        visible.right(),
+                        y,
+                    ),
+                )
+
+                y += grid
+
+        output_rect = QRectF(
             0,
             0,
             self.scene_width,
             self.scene_height,
         )
 
-        painter.fillRect(
-            game_rect,
-            QColor("#202225"),
+        output_pen = QPen(
+            QColor(
+                93,
+                209,
+                255,
+                230,
+            ),
+            2,
         )
 
-        border_pen = QPen(
-            QColor("#7a7d84"),
-            1,
-        )
-
-        border_pen.setCosmetic(
+        output_pen.setCosmetic(
             True
         )
 
         painter.setPen(
-            border_pen
+            output_pen
         )
 
         painter.drawRect(
-            game_rect
+            output_rect
         )
-
-        if not self.grid_visible:
-            return
-
-        grid_pen = QPen(
-            QColor(
-                255,
-                255,
-                255,
-                28,
-            ),
-            1,
-        )
-
-        grid_pen.setCosmetic(
-            True
-        )
-
-        painter.setPen(
-            grid_pen
-        )
-
-        x = 0
-
-        while x <= self.scene_width:
-            painter.drawLine(
-                QPointF(
-                    x,
-                    0,
-                ),
-                QPointF(
-                    x,
-                    self.scene_height,
-                ),
-            )
-
-            x += self.grid_size
-
-        y = 0
-
-        while y <= self.scene_height:
-            painter.drawLine(
-                QPointF(
-                    0,
-                    y,
-                ),
-                QPointF(
-                    self.scene_width,
-                    y,
-                ),
-            )
-
-            y += self.grid_size
 
 
 class SceneViewport(QWidget):

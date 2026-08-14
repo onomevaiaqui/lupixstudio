@@ -147,10 +147,24 @@ class SpriteComponent:
 
 @dataclass(slots=True)
 class CameraComponent:
+    """Camera 2D associada à própria entidade."""
+
     active: bool = False
+
+    # Área lógica visível antes do zoom.
     width: int = 480
     height: int = 270
+
     zoom: float = 1.0
+
+    # Deslocamento da câmera em relação ao Transform
+    # da entidade que possui o componente.
+    offset_x: float = 0.0
+    offset_y: float = 0.0
+
+    # Quando ativo, evita mostrar área fora dos limites
+    # da Scene.
+    limit_to_scene: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -158,6 +172,11 @@ class CameraComponent:
             "width": self.width,
             "height": self.height,
             "zoom": self.zoom,
+            "offset": {
+                "x": self.offset_x,
+                "y": self.offset_y,
+            },
+            "limit_to_scene": self.limit_to_scene,
         }
 
     @classmethod
@@ -165,6 +184,17 @@ class CameraComponent:
         cls,
         data: dict[str, object],
     ) -> CameraComponent:
+        offset = data.get(
+            "offset",
+            {},
+        )
+
+        if not isinstance(
+            offset,
+            dict,
+        ):
+            offset = {}
+
         return cls(
             active=bool(
                 data.get(
@@ -198,6 +228,24 @@ class CameraComponent:
                         1.0,
                     )
                 ),
+            ),
+            offset_x=float(
+                offset.get(
+                    "x",
+                    0.0,
+                )
+            ),
+            offset_y=float(
+                offset.get(
+                    "y",
+                    0.0,
+                )
+            ),
+            limit_to_scene=bool(
+                data.get(
+                    "limit_to_scene",
+                    True,
+                )
             ),
         )
 
@@ -623,7 +671,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 6
+    format: int = 7
     type: str = "scene"
 
     def add_entity(
@@ -780,7 +828,7 @@ class SceneResource:
             format=int(
                 data.get(
                     "format",
-                    6,
+                    7,
                 )
             ),
             type=str(
