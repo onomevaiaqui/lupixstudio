@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QPainter,
@@ -72,6 +72,12 @@ class SceneCanvas(QGraphicsView):
             str,
             QGraphicsItem,
         ] = {}
+
+        # A seleção do viewport é controlada pela Hierarquia.
+        # Cliques na cena não trocam a entidade ativa.
+        self._active_entity_id: str | None = None
+        self._dragging_entity = False
+        self._drag_offset = QPointF()
 
         self.setBackgroundBrush(
             QColor("#111216")
@@ -180,6 +186,13 @@ class SceneCanvas(QGraphicsView):
             factor,
         )
 
+    def center_scene(self) -> None:
+        """Centraliza a área útil da cena no viewport."""
+        self.centerOn(
+            self.scene_width / 2.0,
+            self.scene_height / 2.0,
+        )
+
     def rebuild_entities(self) -> None:
         selected_id = (
             self.selected_entity_id()
@@ -209,6 +222,11 @@ class SceneCanvas(QGraphicsView):
             entity
         )
 
+        # A posição da entidade continua sendo a origem
+        # de todos os seus componentes.
+        #
+        # Para TileMap, (0, 0) corresponde ao canto
+        # superior esquerdo do mapa/cena.
         item.setPos(
             entity.transform.x,
             entity.transform.y,
@@ -218,14 +236,20 @@ class SceneCanvas(QGraphicsView):
             entity.transform.rotation
         )
 
+        # A seleção visual padrão do QGraphicsItem fica desativada.
+        # A Hierarquia continua sendo a fonte de verdade da seleção,
+        # mas nenhum retângulo de seleção é desenhado ao redor do Player.
         item.setFlag(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
-            True,
+            False,
         )
 
+        # O movimento é controlado manualmente pelo SceneCanvas.
+        # Isso impede que um clique sobre Sprite/Camera/Collider/TileMap
+        # troque a seleção definida pela Hierarquia.
         item.setFlag(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
-            True,
+            False,
         )
 
         item.setData(
@@ -681,9 +705,29 @@ class SceneCanvas(QGraphicsView):
     ) -> QGraphicsPixmapItem | None:
         if (
             entity.sprite is None
-            or not entity.sprite.asset_id
             or self.project_root is None
         ):
+            return None
+
+        clip = None
+
+        if (
+            entity.animation is not None
+            and entity.animation.enabled
+        ):
+            clip = entity.animation.default_clip()
+
+        asset_id = str(
+            getattr(
+                clip,
+                "asset_id",
+                "",
+            )
+            or entity.sprite.asset_id
+            or ""
+        )
+
+        if not asset_id:
             return None
 
         registry = AssetRegistry(
@@ -691,23 +735,29 @@ class SceneCanvas(QGraphicsView):
         )
 
         record = registry.find_by_id(
-            entity.sprite.asset_id
+            asset_id
         )
 
         if record is None:
             return None
 
-        path = (
-            self.project_root
-            / record.path
+        source = QPixmap(
+            str(
+                self.project_root
+                / record.path
+            )
         )
 
-        pixmap = QPixmap(
-            str(path)
+        if source.isNull():
+            return None
+
+        pixmap = self._scene_sprite_pixmap(
+            entity,
+            source,
         )
 
         if pixmap.isNull():
-            return None
+            pixmap = source
 
         item = QGraphicsPixmapItem(
             pixmap
@@ -735,12 +785,8 @@ class SceneCanvas(QGraphicsView):
         transform = QTransform()
 
         transform.scale(
-            -1.0
-            if entity.sprite.flip_x
-            else 1.0,
-            -1.0
-            if entity.sprite.flip_y
-            else 1.0,
+            -1.0 if entity.sprite.flip_x else 1.0,
+            -1.0 if entity.sprite.flip_y else 1.0,
         )
 
         transform.scale(
@@ -753,6 +799,221 @@ class SceneCanvas(QGraphicsView):
         )
 
         return item
+
+    def _scene_sprite_pixmap(
+        self,
+        entity: SceneEntity,
+        source: QPixmap,
+    ) -> QPixmap:
+        """Retorna a pose estática exibida no editor de cena."""
+
+        animation = entity.animation
+
+        if (
+            animation is None
+            or not animation.enabled
+        ):
+            return source
+
+        clip = animation.default_clip()
+
+        if (
+            clip is None
+            or not clip.frames
+        ):
+            return source
+
+        frame_id = clip.frames[0]
+
+        if clip.regions:
+            region = clip.region(
+                frame_id
+            )
+
+            if region is None:
+                for candidate in clip.frames:
+                    region = clip.region(
+                        candidate
+                    )
+
+                    if region is not None:
+                        frame_id = candidate
+                        break
+
+            if region is None:
+                return source
+
+            return self._region_canvas_pixmap(
+                source,
+                clip,
+                frame_id,
+            )
+
+        frame_width = max(
+            1,
+            int(
+                animation.frame_width
+            ),
+        )
+
+        frame_height = max(
+            1,
+            int(
+                animation.frame_height
+            ),
+        )
+
+        columns = (
+            source.width()
+            // frame_width
+        )
+
+        rows = (
+            source.height()
+            // frame_height
+        )
+
+        if (
+            columns <= 0
+            or rows <= 0
+        ):
+            return source
+
+        if (
+            frame_id < 0
+            or frame_id >= columns * rows
+        ):
+            return source
+
+        column = (
+            frame_id
+            % columns
+        )
+
+        row = (
+            frame_id
+            // columns
+        )
+
+        return source.copy(
+            column * frame_width,
+            row * frame_height,
+            frame_width,
+            frame_height,
+        )
+
+    @staticmethod
+    def _region_canvas_pixmap(
+        source: QPixmap,
+        clip,
+        frame_id: int,
+    ) -> QPixmap:
+        """Renderiza uma região em canvas lógico fixo."""
+
+        region = clip.region(
+            frame_id
+        )
+
+        if region is None:
+            return QPixmap()
+
+        frame_pixmap = source.copy(
+            region.x,
+            region.y,
+            region.width,
+            region.height,
+        )
+
+        if frame_pixmap.isNull():
+            return QPixmap()
+
+        max_width = 1
+        max_height = 1
+        max_offset_x = 0
+        max_offset_y = 0
+
+        for candidate in clip.regions.values():
+            max_width = max(
+                max_width,
+                candidate.width,
+            )
+
+            max_height = max(
+                max_height,
+                candidate.height,
+            )
+
+            max_offset_x = max(
+                max_offset_x,
+                abs(
+                    candidate.offset_x
+                ),
+            )
+
+            max_offset_y = max(
+                max_offset_y,
+                abs(
+                    candidate.offset_y
+                ),
+            )
+
+        canvas_width = (
+            max_width
+            + max_offset_x * 2
+        )
+
+        canvas_height = (
+            max_height
+            + max_offset_y * 2
+        )
+
+        output = QPixmap(
+            canvas_width,
+            canvas_height,
+        )
+
+        output.fill(
+            Qt.GlobalColor.transparent
+        )
+
+        center_x = (
+            canvas_width
+            // 2
+        )
+
+        bottom_y = canvas_height
+
+        target_x = (
+            center_x
+            - frame_pixmap.width()
+            // 2
+            + region.offset_x
+        )
+
+        target_y = (
+            bottom_y
+            - frame_pixmap.height()
+            + region.offset_y
+        )
+
+        painter = QPainter(
+            output
+        )
+
+        painter.setRenderHint(
+            QPainter.RenderHint.SmoothPixmapTransform,
+            False,
+        )
+
+        painter.drawPixmap(
+            target_x,
+            target_y,
+            frame_pixmap,
+        )
+
+        painter.end()
+
+        return output
 
     def _create_camera_item(
         self,
@@ -961,6 +1222,10 @@ class SceneCanvas(QGraphicsView):
     def selected_entity_id(
         self,
     ) -> str | None:
+        # A Hierarquia é a fonte de verdade da seleção.
+        if self._active_entity_id is not None:
+            return self._active_entity_id
+
         selected = (
             self.graphics_scene.selectedItems()
         )
@@ -990,59 +1255,147 @@ class SceneCanvas(QGraphicsView):
         if item is None:
             return
 
-        self.graphics_scene.blockSignals(
-            True
+        self._active_entity_id = str(
+            entity_id
         )
 
-        try:
-            self.graphics_scene.clearSelection()
+        # Não usamos mais a seleção visual nativa do QGraphicsScene.
+        # Isso evita o retângulo de seleção ao redor da entidade.
+        # O ID ativo é suficiente para permitir o arraste manual.
+        self.graphics_scene.clearSelection()
 
-            item.setSelected(
-                True
+    def mousePressEvent(
+        self,
+        event,
+    ) -> None:
+        if (
+            event.button()
+            != Qt.MouseButton.LeftButton
+        ):
+            super().mousePressEvent(
+                event
             )
+            return
 
-        finally:
-            self.graphics_scene.blockSignals(
-                False
+        entity_id = self._active_entity_id
+
+        if (
+            entity_id is None
+            or self.resource is None
+        ):
+            # Sem entidade escolhida na Hierarquia, o clique
+            # na cena não seleciona itens por baixo do cursor.
+            event.accept()
+            return
+
+        entity = self.resource.entity(
+            entity_id
+        )
+
+        item = self.entity_items.get(
+            entity_id
+        )
+
+        if (
+            entity is None
+            or item is None
+        ):
+            event.accept()
+            return
+
+        # TileMap permanece bloqueado para movimento no viewport.
+        if entity.tilemap is not None:
+            event.accept()
+            return
+
+        scene_position = self.mapToScene(
+            event.position().toPoint()
+        )
+
+        self._drag_offset = (
+            scene_position
+            - item.pos()
+        )
+
+        self._dragging_entity = True
+
+        event.accept()
+
+    def mouseMoveEvent(
+        self,
+        event,
+    ) -> None:
+        if not self._dragging_entity:
+            super().mouseMoveEvent(
+                event
             )
+            return
+
+        entity_id = self._active_entity_id
+
+        if entity_id is None:
+            return
+
+        item = self.entity_items.get(
+            entity_id
+        )
+
+        if item is None:
+            return
+
+        scene_position = self.mapToScene(
+            event.position().toPoint()
+        )
+
+        item.setPos(
+            scene_position
+            - self._drag_offset
+        )
+
+        event.accept()
 
     def mouseReleaseEvent(
         self,
         event,
     ) -> None:
-        super().mouseReleaseEvent(
-            event
-        )
-
         if (
             event.button()
             != Qt.MouseButton.LeftButton
         ):
+            super().mouseReleaseEvent(
+                event
+            )
             return
 
-        selected = (
-            self.graphics_scene.selectedItems()
-        )
-
-        if not selected:
+        if not self._dragging_entity:
+            event.accept()
             return
 
-        item = selected[0]
+        self._dragging_entity = False
 
-        entity_id = item.data(
-            0
+        entity_id = self._active_entity_id
+
+        if entity_id is None:
+            event.accept()
+            return
+
+        item = self.entity_items.get(
+            entity_id
         )
 
-        if not entity_id:
+        if item is None:
+            event.accept()
             return
 
         position = item.pos()
 
         self.entity_moved.emit(
-            str(entity_id),
+            entity_id,
             position.x(),
             position.y(),
         )
+
+        event.accept()
 
     def _on_graphics_selection_changed(
         self,
@@ -1343,6 +1696,16 @@ class SceneViewport(QWidget):
 
         self._update_grid()
         self._update_zoom()
+
+        # O QGraphicsView possui uma sceneRect maior que a área do jogo
+        # para permitir edição fora dos limites da cena. Por isso, ao abrir
+        # uma cena, centralizamos explicitamente a área 0..width / 0..height.
+        # singleShot(0, ...) espera o layout terminar de calcular o tamanho
+        # real do viewport antes de posicionar a câmera.
+        QTimer.singleShot(
+            0,
+            self.canvas.center_scene,
+        )
 
     def refresh_entities(self) -> None:
         self.canvas.rebuild_entities()

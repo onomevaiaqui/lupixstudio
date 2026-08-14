@@ -348,14 +348,6 @@ class MainWindow(QMainWindow):
             self._on_tilemap_back_requested
         )
 
-        self.workspace.animation_back_requested.connect(
-            self._on_animation_back_requested
-        )
-
-        self.workspace.animation_changed.connect(
-            self._on_animation_changed
-        )
-
         self.workspace.play_stop_requested.connect(
             self._stop_play_preview
         )
@@ -461,10 +453,6 @@ class MainWindow(QMainWindow):
 
         self.animation_editor.animation_changed.connect(
             self._on_animation_changed
-        )
-
-        self.animation_editor.edit_requested.connect(
-            self._on_animation_edit_requested
         )
 
         self.camera_editor.camera_changed.connect(
@@ -1384,9 +1372,8 @@ class MainWindow(QMainWindow):
         if self.playing:
             return
 
-        self.workspace.scene_viewport.select_component(
-            entity_id,
-            component,
+        self.workspace.scene_viewport.select_entity(
+            entity_id
         )
 
         self._show_entity_in_inspector(
@@ -1518,7 +1505,6 @@ class MainWindow(QMainWindow):
     ) -> None:
         if (
             self.current_scene is None
-            or self.current_project is None
             or self.playing
         ):
             return
@@ -1670,86 +1656,6 @@ class MainWindow(QMainWindow):
         )
 
         self._save_current_scene()
-
-    def _on_animation_edit_requested(
-        self,
-        entity_id: str,
-        clip_name: str,
-    ) -> None:
-        if (
-            self.current_scene is None
-            or self.current_project is None
-            or self.playing
-        ):
-            return
-
-        entity = self.current_scene.entity(
-            entity_id
-        )
-
-        if (
-            entity is None
-            or entity.animation is None
-        ):
-            return
-
-        self._save_current_scene()
-
-        self.workspace.show_animation(
-            self.current_project.root,
-            entity,
-            clip_name,
-        )
-
-        self.statusBar().showMessage(
-            "Animation Editor: "
-            f"{entity.name} > {clip_name}"
-        )
-
-        self.console.append(
-            "Animation Editor aberto: "
-            f"{entity.name} > {clip_name}"
-        )
-
-    def _on_animation_back_requested(
-        self,
-    ) -> None:
-        if (
-            self.current_project is None
-            or self.current_scene is None
-            or self.playing
-        ):
-            return
-
-        self._save_current_scene()
-
-        self.workspace.show_scene(
-            self.current_project.root,
-            self.current_scene,
-        )
-
-        self._show_scene_hierarchy()
-
-        self.inspector_stack.setCurrentWidget(
-            self.entity_scroll
-        )
-
-        self.statusBar().showMessage(
-            f"Cena aberta: {self.current_scene.name}"
-        )
-
-        self.console.append(
-            "Retorno do Animation Editor "
-            "para a cena."
-        )
-
-        self.setWindowTitle(
-            f"{self.current_scene.name} - "
-            f"{self.current_project.name} - "
-            "Lupix Studio"
-        )
-
-        self._validate_current_scene()
 
     def _on_tilemap_edit_requested(
         self,

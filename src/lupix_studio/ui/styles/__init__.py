@@ -1,7 +1,3 @@
-"""Lupix Studio."""
-
-__version__ = "0.1.0"
-
 from lupix_studio.ui.styles.checkbox_style import (
     LupixCheckBoxStyle,
     install_checkbox_style,

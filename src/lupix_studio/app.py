@@ -6,6 +6,9 @@ from PySide6.QtWidgets import QApplication
 from lupix_studio.core.logging import configure_logging
 from lupix_studio.settings.manager import SettingsManager
 from lupix_studio.ui.main_window import MainWindow
+from lupix_studio.ui.styles import (
+    install_checkbox_style,
+)
 from lupix_studio.ui.theme.dark import DARK_STYLESHEET
 
 
@@ -15,6 +18,10 @@ def create_application() -> QApplication:
 
     if app is None:
         app = QApplication(sys.argv)
+
+    install_checkbox_style(
+        app
+    )
 
     app.setApplicationName("Lupix Studio")
     app.setOrganizationName("Lupix")

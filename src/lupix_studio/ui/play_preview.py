@@ -55,6 +55,8 @@ class PlayCanvas(QGraphicsView):
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
 
+        self.follow_active_camera = True
+
         self.entity_items: dict[
             str,
             QGraphicsPixmapItem | QGraphicsRectItem,
@@ -135,7 +137,7 @@ class PlayCanvas(QGraphicsView):
                 entity
             )
 
-        self.fit_scene()
+        self.fit_camera()
 
     def refresh(self) -> None:
         if self.runtime is None:
@@ -158,9 +160,26 @@ class PlayCanvas(QGraphicsView):
                 entity.transform.rotation
             )
 
+            if (
+                isinstance(
+                    item,
+                    QGraphicsPixmapItem,
+                )
+                and entity.sprite is not None
+            ):
+                self._refresh_sprite_visual(
+                    entity,
+                    item,
+                )
+
+        if self.follow_active_camera:
+            self.fit_camera()
+
     def fit_scene(self) -> None:
         if self.runtime is None:
             return
+
+        self.follow_active_camera = False
 
         scene = self.runtime.scene
 
@@ -173,6 +192,71 @@ class PlayCanvas(QGraphicsView):
             ),
             Qt.AspectRatioMode.KeepAspectRatio,
         )
+
+    def fit_camera(self) -> None:
+        if self.runtime is None:
+            return
+
+        scene = self.runtime.scene
+        camera_entity = scene.active_camera()
+
+        if (
+            camera_entity is None
+            or camera_entity.camera is None
+        ):
+            self.fitInView(
+                QRectF(
+                    0,
+                    0,
+                    scene.width,
+                    scene.height,
+                ),
+                Qt.AspectRatioMode.KeepAspectRatio,
+            )
+            return
+
+        camera = camera_entity.camera
+
+        width = max(
+            1.0,
+            float(camera.width),
+        )
+
+        height = max(
+            1.0,
+            float(camera.height),
+        )
+
+        zoom = max(
+            0.01,
+            float(camera.zoom),
+        )
+
+        visible_width = width / zoom
+        visible_height = height / zoom
+
+        camera_rect = QRectF(
+            float(camera_entity.transform.x)
+            - visible_width / 2.0,
+            float(camera_entity.transform.y)
+            - visible_height / 2.0,
+            visible_width,
+            visible_height,
+        )
+
+        self.fitInView(
+            camera_rect,
+            Qt.AspectRatioMode.KeepAspectRatio,
+        )
+
+        self.centerOn(
+            float(camera_entity.transform.x),
+            float(camera_entity.transform.y),
+        )
+
+    def use_active_camera(self) -> None:
+        self.follow_active_camera = True
+        self.fit_camera()
 
     def _add_entity(
         self,
@@ -249,11 +333,86 @@ class PlayCanvas(QGraphicsView):
         self,
         entity: SceneEntity,
     ) -> QGraphicsPixmapItem | None:
+        pixmap = self._sprite_pixmap_for_entity(
+            entity
+        )
+
+        if pixmap is None:
+            return None
+
+        item = QGraphicsPixmapItem(
+            pixmap
+        )
+
+        self._apply_sprite_item_settings(
+            entity,
+            item,
+            pixmap,
+        )
+
+        return item
+
+    def _refresh_sprite_visual(
+        self,
+        entity: SceneEntity,
+        item: QGraphicsPixmapItem,
+    ) -> None:
+        pixmap = self._sprite_pixmap_for_entity(
+            entity
+        )
+
+        if pixmap is None:
+            return
+
+        item.setPixmap(
+            pixmap
+        )
+
+        self._apply_sprite_item_settings(
+            entity,
+            item,
+            pixmap,
+        )
+
+    def _sprite_pixmap_for_entity(
+        self,
+        entity: SceneEntity,
+    ) -> QPixmap | None:
         if (
             entity.sprite is None
-            or not entity.sprite.asset_id
             or self.project_root is None
         ):
+            return None
+
+        clip = None
+
+        if (
+            self.runtime is not None
+            and entity.animation is not None
+            and entity.animation.enabled
+        ):
+            clip_name = self.runtime.animation_name_for(
+                entity.id
+            )
+
+            if not clip_name:
+                clip_name = entity.animation.default_animation
+
+            clip = entity.animation.clip(
+                clip_name
+            )
+
+        asset_id = str(
+            getattr(
+                clip,
+                "asset_id",
+                "",
+            )
+            or entity.sprite.asset_id
+            or ""
+        )
+
+        if not asset_id:
             return None
 
         registry = AssetRegistry(
@@ -261,28 +420,234 @@ class PlayCanvas(QGraphicsView):
         )
 
         record = registry.find_by_id(
-            entity.sprite.asset_id
+            asset_id
         )
 
         if record is None:
             return None
 
-        image_path = (
-            self.project_root
-            / record.path
+        source = QPixmap(
+            str(
+                self.project_root
+                / record.path
+            )
         )
 
-        pixmap = QPixmap(
-            str(image_path)
-        )
-
-        if pixmap.isNull():
+        if source.isNull():
             return None
 
-        item = QGraphicsPixmapItem(
-            pixmap
+        if clip is None:
+            return source
+
+        if not clip.frames:
+            if clip.regions:
+                first_region_id = next(
+                    iter(
+                        clip.regions
+                    )
+                )
+
+                return self._region_canvas_pixmap(
+                    source,
+                    clip,
+                    first_region_id,
+                )
+
+            return source
+
+        frame_id = self.runtime.animation_frame_for(
+            entity.id
         )
 
+        if clip.regions:
+            resolved_frame_id = frame_id
+            region = clip.region(
+                resolved_frame_id
+            )
+
+            if region is None:
+                for candidate in clip.frames:
+                    candidate_region = clip.region(
+                        candidate
+                    )
+
+                    if candidate_region is not None:
+                        resolved_frame_id = candidate
+                        region = candidate_region
+                        break
+
+            if region is None:
+                return QPixmap()
+
+            return self._region_canvas_pixmap(
+                source,
+                clip,
+                resolved_frame_id,
+            )
+
+        animation = entity.animation
+
+        if animation is None:
+            return source
+
+        frame_width = max(
+            1,
+            int(animation.frame_width),
+        )
+
+        frame_height = max(
+            1,
+            int(animation.frame_height),
+        )
+
+        columns = source.width() // frame_width
+        rows = source.height() // frame_height
+
+        if columns <= 0 or rows <= 0:
+            return source
+
+        if frame_id < 0 or frame_id >= columns * rows:
+            return source
+
+        column = frame_id % columns
+        row = frame_id // columns
+
+        return source.copy(
+            column * frame_width,
+            row * frame_height,
+            frame_width,
+            frame_height,
+        )
+
+    @staticmethod
+    def _region_canvas_pixmap(
+        source: QPixmap,
+        clip,
+        frame_id: int,
+    ) -> QPixmap:
+        """
+        Renderiza uma região em um canvas lógico fixo.
+
+        Todas as poses:
+        - mantêm a escala original;
+        - usam o mesmo canvas;
+        - ficam alinhadas pela base central.
+        """
+
+        region = clip.region(
+            frame_id
+        )
+
+        if region is None:
+            return QPixmap()
+
+        frame_pixmap = source.copy(
+            region.x,
+            region.y,
+            region.width,
+            region.height,
+        )
+
+        if frame_pixmap.isNull():
+            return QPixmap()
+
+        max_width = 1
+        max_height = 1
+
+        max_offset_x = 0
+        max_offset_y = 0
+
+        for candidate in clip.regions.values():
+            max_width = max(
+                max_width,
+                candidate.width,
+            )
+
+            max_height = max(
+                max_height,
+                candidate.height,
+            )
+
+            max_offset_x = max(
+                max_offset_x,
+                abs(
+                    candidate.offset_x
+                ),
+            )
+
+            max_offset_y = max(
+                max_offset_y,
+                abs(
+                    candidate.offset_y
+                ),
+            )
+
+        canvas_width = (
+            max_width
+            + max_offset_x * 2
+        )
+
+        canvas_height = (
+            max_height
+            + max_offset_y * 2
+        )
+
+        output = QPixmap(
+            canvas_width,
+            canvas_height,
+        )
+
+        output.fill(
+            Qt.GlobalColor.transparent
+        )
+
+        center_x = (
+            canvas_width
+            // 2
+        )
+
+        bottom_y = (
+            canvas_height
+        )
+
+        target_x = (
+            center_x
+            - frame_pixmap.width()
+            // 2
+            + region.offset_x
+        )
+
+        target_y = (
+            bottom_y
+            - frame_pixmap.height()
+            + region.offset_y
+        )
+
+        painter = QPainter(
+            output
+        )
+
+        painter.setRenderHint(
+            QPainter.RenderHint.SmoothPixmapTransform,
+            False,
+        )
+
+        painter.drawPixmap(
+            target_x,
+            target_y,
+            frame_pixmap,
+        )
+
+        painter.end()
+
+        return output
+
+    @staticmethod
+    def _apply_sprite_item_settings(
+        entity: SceneEntity,
+        item: QGraphicsPixmapItem,
+        pixmap: QPixmap,
+    ) -> None:
         item.setOffset(
             -pixmap.width() / 2,
             -pixmap.height() / 2,
@@ -302,7 +667,35 @@ class PlayCanvas(QGraphicsView):
             entity.sprite.layer
         )
 
-        return item
+        transform = item.transform()
+
+        scale_x = (
+            -1.0
+            if entity.sprite.flip_x
+            else 1.0
+        )
+
+        scale_y = (
+            -1.0
+            if entity.sprite.flip_y
+            else 1.0
+        )
+
+        transform.setMatrix(
+            scale_x,
+            0.0,
+            0.0,
+            0.0,
+            scale_y,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+
+        item.setTransform(
+            transform
+        )
 
     def _create_tilemap_item(
         self,
@@ -590,7 +983,7 @@ class PlayPreview(QWidget):
         )
 
         self.fit_button.clicked.connect(
-            self.canvas.fit_scene
+            self.canvas.use_active_camera
         )
 
     def start(
@@ -659,6 +1052,7 @@ class PlayPreview(QWidget):
             super().keyPressEvent(
                 event
             )
+
             return
 
         key = event.key()
@@ -670,6 +1064,7 @@ class PlayPreview(QWidget):
             self.runtime.input.left = True
 
             event.accept()
+
             return
 
         if key in (
@@ -679,18 +1074,21 @@ class PlayPreview(QWidget):
             self.runtime.input.right = True
 
             event.accept()
+
             return
 
         if key == Qt.Key.Key_Space:
             self.runtime.input.jump = True
 
             event.accept()
+
             return
 
         if key == Qt.Key.Key_Escape:
             self.stop()
 
             event.accept()
+
             return
 
         super().keyPressEvent(
@@ -705,6 +1103,7 @@ class PlayPreview(QWidget):
             super().keyReleaseEvent(
                 event
             )
+
             return
 
         if event.isAutoRepeat():
@@ -719,6 +1118,7 @@ class PlayPreview(QWidget):
             self.runtime.input.left = False
 
             event.accept()
+
             return
 
         if key in (
@@ -728,12 +1128,14 @@ class PlayPreview(QWidget):
             self.runtime.input.right = False
 
             event.accept()
+
             return
 
         if key == Qt.Key.Key_Space:
             self.runtime.input.jump = False
 
             event.accept()
+
             return
 
         super().keyReleaseEvent(

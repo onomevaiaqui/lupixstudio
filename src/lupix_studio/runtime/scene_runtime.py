@@ -27,6 +27,11 @@ class EntityRuntimeState:
     on_ground: bool = False
     jump_was_pressed: bool = False
 
+    animation_name: str = ""
+    animation_frame_index: int = 0
+    animation_elapsed: float = 0.0
+    animation_frame: int = 0
+
 
 @dataclass(slots=True)
 class CollisionRect:
@@ -109,6 +114,13 @@ class SceneRuntime:
             self._update_ground_state(
                 player,
                 state,
+            )
+
+            self._update_player_animation(
+                player,
+                state,
+                0.0,
+                force_reset=True,
             )
 
     def stop(self) -> None:
@@ -201,9 +213,326 @@ class SceneRuntime:
             state,
         )
 
+        self._update_player_animation(
+            player,
+            state,
+            delta,
+        )
+
         state.jump_was_pressed = (
             self.input.jump
         )
+
+    def animation_frame_for(
+        self,
+        entity_id: str,
+    ) -> int:
+        """Retorna o frame atual da animação de uma entidade."""
+
+        return self.state_for(
+            entity_id
+        ).animation_frame
+
+    def animation_name_for(
+        self,
+        entity_id: str,
+    ) -> str:
+        """Retorna o nome da animação atual de uma entidade."""
+
+        return self.state_for(
+            entity_id
+        ).animation_name
+
+    def _update_player_animation(
+        self,
+        player: SceneEntity,
+        state: EntityRuntimeState,
+        delta: float,
+        *,
+        force_reset: bool = False,
+    ) -> None:
+        animation = player.animation
+
+        if (
+            animation is None
+            or not animation.enabled
+        ):
+            state.animation_name = ""
+            state.animation_frame_index = 0
+            state.animation_elapsed = 0.0
+            state.animation_frame = 0
+            return
+
+        if player.sprite is not None:
+            if state.velocity_x < -0.01:
+                player.sprite.flip_x = True
+
+            elif state.velocity_x > 0.01:
+                player.sprite.flip_x = False
+
+        animation_name = (
+            self._desired_player_animation(
+                animation,
+                state,
+            )
+        )
+
+        if not animation_name:
+            state.animation_name = ""
+            state.animation_frame_index = 0
+            state.animation_elapsed = 0.0
+            state.animation_frame = 0
+            return
+
+        clip = animation.clip(
+            animation_name
+        )
+
+        if clip is None:
+            state.animation_name = ""
+            state.animation_frame_index = 0
+            state.animation_elapsed = 0.0
+            state.animation_frame = 0
+            return
+
+        #
+        # O runtime precisa trabalhar com a mesma fonte de frames
+        # usada pelo Animation Editor.
+        #
+        # Em animações por regiões, projetos convertidos podem ter
+        # regiões válidas mesmo quando a lista antiga `frames` está
+        # vazia ou incompleta. Nesse caso usamos a ordem das regiões.
+        #
+        runtime_frames = list(
+            clip.frames
+        )
+
+        if (
+            not runtime_frames
+            and clip.regions
+        ):
+            runtime_frames = list(
+                clip.regions.keys()
+            )
+
+        if not runtime_frames:
+            state.animation_name = animation_name
+            state.animation_frame_index = 0
+            state.animation_elapsed = 0.0
+            state.animation_frame = 0
+            return
+
+        changed = (
+            animation_name
+            != state.animation_name
+        )
+
+        if (
+            changed
+            or force_reset
+        ):
+            state.animation_name = (
+                animation_name
+            )
+            state.animation_frame_index = 0
+            state.animation_elapsed = 0.0
+            state.animation_frame = (
+                runtime_frames[0]
+            )
+
+            if delta <= 0.0:
+                return
+
+        fps = max(
+            0.01,
+            float(clip.fps),
+        )
+
+        frame_duration = (
+            1.0
+            / fps
+        )
+
+        state.animation_elapsed += max(
+            0.0,
+            delta,
+        )
+
+        while (
+            state.animation_elapsed
+            >= frame_duration
+        ):
+            state.animation_elapsed -= (
+                frame_duration
+            )
+
+            next_index = (
+                state.animation_frame_index
+                + 1
+            )
+
+            if next_index >= len(
+                runtime_frames
+            ):
+                if clip.loop:
+                    next_index = 0
+
+                else:
+                    next_index = (
+                        len(runtime_frames)
+                        - 1
+                    )
+                    state.animation_elapsed = 0.0
+
+            state.animation_frame_index = (
+                next_index
+            )
+            state.animation_frame = (
+                runtime_frames[
+                    state.animation_frame_index
+                ]
+            )
+
+            if (
+                not clip.loop
+                and state.animation_frame_index
+                == len(runtime_frames) - 1
+            ):
+                break
+
+    @staticmethod
+    def _desired_player_animation(
+        animation,
+        state: EntityRuntimeState,
+    ) -> str:
+        """
+        Escolhe a animação que pode realmente ser renderizada.
+
+        No modo de regiões, um clip só é considerado válido quando
+        possui pelo menos uma região associada à sua sequência.
+
+        Isso evita trocar de idle para run/jump/fall antigos que ainda
+        possuem apenas índices da grade, o que fazia o Play exibir
+        pedaços do spritesheet ou o atlas completo ao mover o Player.
+        """
+
+        candidates: list[str] = []
+
+        if not state.on_ground:
+            if state.velocity_y < -0.01:
+                candidates.append(
+                    "jump"
+                )
+
+            else:
+                candidates.append(
+                    "fall"
+                )
+
+        elif abs(
+            state.velocity_x
+        ) > 0.01:
+            candidates.append(
+                "run"
+            )
+
+        else:
+            candidates.append(
+                "idle"
+            )
+
+        default_animation = str(
+            animation.default_animation
+            or ""
+        ).strip()
+
+        if default_animation:
+            candidates.append(
+                default_animation
+            )
+
+        for name in animation.clips:
+            candidates.append(
+                str(name)
+            )
+
+        #
+        # Se qualquer clip já utiliza regiões, tratamos o componente
+        # como animação por regiões. Isso também cobre cenas antigas
+        # cujo frame_mode ainda possa estar salvo como "grid".
+        #
+        uses_regions = (
+            getattr(
+                animation,
+                "frame_mode",
+                "grid",
+            )
+            == "regions"
+            or any(
+                bool(
+                    getattr(
+                        clip,
+                        "regions",
+                        {},
+                    )
+                )
+                for clip in animation.clips.values()
+            )
+        )
+
+        seen: set[str] = set()
+
+        for name in candidates:
+            if (
+                not name
+                or name in seen
+            ):
+                continue
+
+            seen.add(
+                name
+            )
+
+            clip = animation.clip(
+                name
+            )
+
+            if clip is None:
+                continue
+
+            if uses_regions:
+                runtime_frames = list(
+                    clip.frames
+                )
+
+                if (
+                    not runtime_frames
+                    and clip.regions
+                ):
+                    runtime_frames = list(
+                        clip.regions.keys()
+                    )
+
+                if not runtime_frames:
+                    continue
+
+                has_valid_region = any(
+                    clip.region(
+                        frame_id
+                    )
+                    is not None
+                    for frame_id in runtime_frames
+                )
+
+                if has_valid_region:
+                    return name
+
+                continue
+
+            if clip.frames:
+                return name
+
+        return ""
 
     def _update_horizontal_velocity(
         self,

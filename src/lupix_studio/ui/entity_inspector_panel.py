@@ -49,11 +49,6 @@ class InspectorSection(QWidget):
             
         )
 
-        self.button.setSizePolicy(
-            self.button.sizePolicy().horizontalPolicy(),
-            self.button.sizePolicy().verticalPolicy(),
-        )
-
         self.button.setStyleSheet(
             """
             QToolButton {
@@ -106,25 +101,21 @@ class InspectorSection(QWidget):
             separator
         )
 
-        content_container = QWidget()
+        self.content_container = QWidget()
 
-        self.content_layout = QVBoxLayout(
-            content_container
+        content_layout = QVBoxLayout(
+            self.content_container
         )
 
-        self.content_layout.setContentsMargins(
+        content_layout.setContentsMargins(
             8,
             8,
             8,
             12,
         )
 
-        self.content_layout.addWidget(
+        content_layout.addWidget(
             content
-        )
-
-        self.content_container = (
-            content_container
         )
 
         layout.addWidget(
@@ -168,10 +159,11 @@ class InspectorSection(QWidget):
 
 
 class EntityInspectorPanel(QWidget):
-    """Inspector de entidade baseado em seções recolhíveis."""
+    """Inspector de entidade com seções recolhíveis."""
 
     SECTION_TRANSFORM = "transform"
     SECTION_SPRITE = "sprite"
+    SECTION_ANIMATION = "animation"
     SECTION_CAMERA = "camera"
     SECTION_TILEMAP = "tilemap"
     SECTION_COLLIDER = "collider"
@@ -181,6 +173,7 @@ class EntityInspectorPanel(QWidget):
         self,
         transform_editor: QWidget,
         sprite_editor: QWidget,
+        animation_editor: QWidget,
         camera_editor: QWidget,
         tilemap_editor: QWidget,
         collider_editor: QWidget,
@@ -221,6 +214,13 @@ class EntityInspectorPanel(QWidget):
             self.SECTION_SPRITE,
             "Sprite",
             sprite_editor,
+        )
+
+        self._add_section(
+            layout,
+            self.SECTION_ANIMATION,
+            "Animation",
+            animation_editor,
         )
 
         self._add_section(

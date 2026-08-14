@@ -257,6 +257,19 @@ class SceneTree(QWidget):
                 "Sprite",
             )
 
+        if entity.animation is not None:
+            label = "Animation"
+
+            if not entity.animation.enabled:
+                label += " (desativado)"
+
+            self._add_component_item(
+                parent,
+                entity,
+                "animation",
+                label,
+            )
+
         if entity.camera is not None:
             label = "Camera"
 
@@ -519,6 +532,7 @@ class SceneTree(QWidget):
                 self.tree.setCurrentItem(
                     entity_item
                 )
+
                 return
 
             for child_index in range(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from lupix_studio.animation import AnimationComponent
+
 
 @dataclass(slots=True)
 class Transform2D:
@@ -405,6 +407,7 @@ class SceneEntity:
     )
 
     sprite: SpriteComponent | None = None
+    animation: AnimationComponent | None = None
     camera: CameraComponent | None = None
     tilemap: TileMapComponent | None = None
     collider: ColliderComponent | None = None
@@ -444,6 +447,11 @@ class SceneEntity:
         if self.sprite is not None:
             data["sprite"] = (
                 self.sprite.to_dict()
+            )
+
+        if self.animation is not None:
+            data["animation"] = (
+                self.animation.to_dict()
             )
 
         if self.camera is not None:
@@ -488,6 +496,10 @@ class SceneEntity:
             "sprite"
         )
 
+        animation_data = data.get(
+            "animation"
+        )
+
         camera_data = data.get(
             "camera"
         )
@@ -505,6 +517,7 @@ class SceneEntity:
         )
 
         sprite: SpriteComponent | None = None
+        animation: AnimationComponent | None = None
         camera: CameraComponent | None = None
         tilemap: TileMapComponent | None = None
         collider: ColliderComponent | None = None
@@ -516,6 +529,16 @@ class SceneEntity:
         ):
             sprite = SpriteComponent.from_dict(
                 sprite_data
+            )
+
+        if isinstance(
+            animation_data,
+            dict,
+        ):
+            animation = (
+                AnimationComponent.from_dict(
+                    animation_data
+                )
             )
 
         if isinstance(
@@ -578,6 +601,7 @@ class SceneEntity:
                 transform_data
             ),
             sprite=sprite,
+            animation=animation,
             camera=camera,
             tilemap=tilemap,
             collider=collider,
@@ -662,8 +686,7 @@ class SceneResource:
     ) -> SceneEntity | None:
         for entity in self.entities:
             if (
-                entity.player_controller
-                is not None
+                entity.player_controller is not None
                 and entity.player_controller.enabled
             ):
                 return entity
@@ -706,7 +729,9 @@ class SceneResource:
             [],
         )
 
-        entities: list[SceneEntity] = []
+        entities: list[
+            SceneEntity
+        ] = []
 
         if isinstance(
             raw_entities,
@@ -755,7 +780,7 @@ class SceneResource:
             format=int(
                 data.get(
                     "format",
-                    1,
+                    6,
                 )
             ),
             type=str(
