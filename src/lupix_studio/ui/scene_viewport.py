@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from lupix_studio.assets.registry import AssetRegistry
+from lupix_studio.project.loader import load_project
 from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
@@ -1744,13 +1745,64 @@ class SceneViewport(QWidget):
             resource.name
         )
 
+        # =========================================================
+        # RESOLUÇÃO DE SAÍDA
+        # =========================================================
+        #
+        # A Scene continua possuindo um workspace grande e livre.
+        # A resolução do projeto define somente o retângulo azul
+        # que representa a área exibida ao jogador.
+        #
+        # Lupi:
+        #   480 × 270 fixo
+        #
+        # PC:
+        #   resolução configurada no lupix.project
+        #
+        output_width = resource.width
+        output_height = resource.height
+        platform_label = "Scene"
+
+        try:
+            project = load_project(
+                self.project_root
+            )
+
+            output_width = project.width
+            output_height = project.height
+
+            platform_label = (
+                "Lupi"
+                if project.platform == "lupi"
+                else "PC"
+            )
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            # Compatibilidade com cenas/projetos antigos:
+            # se o lupix.project não puder ser carregado,
+            # utilizamos a resolução armazenada na própria Scene.
+            pass
+
         self.resolution_label.setText(
-            f"{resource.width} × {resource.height}"
+            f"Saída {platform_label}: "
+            f"{output_width} × {output_height}"
         )
 
+        # Primeiro carrega todos os elementos e entidades da Scene.
         self.canvas.set_resource(
             self.project_root,
             resource,
+        )
+
+        # Depois substitui somente a área de saída pela resolução
+        # real configurada no projeto. O editor_rect permanece grande.
+        self.canvas.set_scene_size(
+            output_width,
+            output_height,
         )
 
         self.canvas.set_colliders_visible(
@@ -1760,11 +1812,12 @@ class SceneViewport(QWidget):
         self._update_grid()
         self._update_zoom()
 
-        # O QGraphicsView possui uma sceneRect maior que a área do jogo
-        # para permitir edição fora dos limites da cena. Por isso, ao abrir
-        # uma cena, centralizamos explicitamente a área 0..width / 0..height.
-        # singleShot(0, ...) espera o layout terminar de calcular o tamanho
-        # real do viewport antes de posicionar a câmera.
+        # O QGraphicsView possui uma sceneRect muito maior que a área
+        # de saída. Ao abrir a Scene, centralizamos explicitamente o
+        # retângulo 0..width / 0..height que representa a tela do jogo.
+        #
+        # singleShot(0, ...) espera o layout terminar de calcular o
+        # tamanho real do viewport antes de posicionar a visualização.
         QTimer.singleShot(
             0,
             self.canvas.center_scene,

@@ -847,106 +847,86 @@ class SceneRuntime:
             ):
                 continue
 
-            occupied_cells: list[
-                tuple[int, int]
-            ] = []
-
-            for layer in tilemap.layers:
-                for key in layer.cells:
-                    try:
-                        column_text, row_text = (
-                            key.split(
-                                ",",
-                                maxsplit=1,
-                            )
-                        )
-
-                        occupied_cells.append(
-                            (
-                                int(column_text),
-                                int(row_text),
-                            )
-                        )
-
-                    except (
-                        ValueError,
-                        AttributeError,
-                    ):
-                        continue
-
-            if not occupied_cells:
-                continue
-
-            min_column = min(
-                column
-                for column, _row
-                in occupied_cells
-            )
-
-            max_column = max(
-                column
-                for column, _row
-                in occupied_cells
-            )
-
-            min_row = min(
-                row
-                for _column, row
-                in occupied_cells
-            )
-
-            max_row = max(
-                row
-                for _column, row
-                in occupied_cells
-            )
-
-            x1 = (
-                entity.transform.x
-                + min_column
+            #
+            # O TileMap Editor expande width/height automaticamente
+            # conforme o usuário pinta a fase.
+            #
+            # Essas dimensões representam o tamanho lógico atual
+            # do mundo, enquanto a resolução do projeto representa
+            # apenas a área de saída exibida ao jogador.
+            #
+            map_width = (
+                tilemap.width
                 * tilemap.tile_width
+                * entity.transform.scale_x
             )
 
-            y1 = (
-                entity.transform.y
-                + min_row
+            map_height = (
+                tilemap.height
                 * tilemap.tile_height
+                * entity.transform.scale_y
+            )
+
+            x1 = float(
+                entity.transform.x
+            )
+
+            y1 = float(
+                entity.transform.y
             )
 
             x2 = (
-                entity.transform.x
-                + (max_column + 1)
-                * tilemap.tile_width
+                x1
+                + float(map_width)
             )
 
             y2 = (
-                entity.transform.y
-                + (max_row + 1)
-                * tilemap.tile_height
+                y1
+                + float(map_height)
+            )
+
+            #
+            # min/max também mantém o cálculo correto caso uma
+            # entidade use escala negativa.
+            #
+            left = min(
+                x1,
+                x2,
+            )
+
+            right = max(
+                x1,
+                x2,
+            )
+
+            top = min(
+                y1,
+                y2,
+            )
+
+            bottom = max(
+                y1,
+                y2,
             )
 
             self.world_left = min(
                 self.world_left,
-                float(x1),
-                float(x2),
+                left,
             )
 
             self.world_top = min(
                 self.world_top,
-                float(y1),
-                float(y2),
+                top,
             )
 
             self.world_right = max(
                 self.world_right,
-                float(x1),
-                float(x2),
+                right,
             )
 
             self.world_bottom = max(
                 self.world_bottom,
-                float(y1),
-                float(y2),
+                bottom,
             )
 
     def _load_tilemap_collisions(

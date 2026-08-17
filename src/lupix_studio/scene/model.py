@@ -162,9 +162,25 @@ class CameraComponent:
     offset_x: float = 0.0
     offset_y: float = 0.0
 
-    # Quando ativo, evita mostrar área fora dos limites
-    # da Scene.
+    # Limita a câmera ao mundo/fase.
     limit_to_scene: bool = True
+
+    # Limites personalizados opcionais.
+    custom_limits_enabled: bool = False
+    limit_left: float = 0.0
+    limit_top: float = 0.0
+    limit_right: float = 480.0
+    limit_bottom: float = 270.0
+
+    # Dead Zone: o alvo pode se mover dentro desta área
+    # sem deslocar imediatamente a câmera.
+    dead_zone_enabled: bool = False
+    dead_zone_width: float = 80.0
+    dead_zone_height: float = 50.0
+
+    # Suavização do acompanhamento.
+    smoothing_enabled: bool = False
+    smoothing_speed: float = 5.0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -177,6 +193,24 @@ class CameraComponent:
                 "y": self.offset_y,
             },
             "limit_to_scene": self.limit_to_scene,
+            "limits": {
+                "custom_enabled": (
+                    self.custom_limits_enabled
+                ),
+                "left": self.limit_left,
+                "top": self.limit_top,
+                "right": self.limit_right,
+                "bottom": self.limit_bottom,
+            },
+            "dead_zone": {
+                "enabled": self.dead_zone_enabled,
+                "width": self.dead_zone_width,
+                "height": self.dead_zone_height,
+            },
+            "smoothing": {
+                "enabled": self.smoothing_enabled,
+                "speed": self.smoothing_speed,
+            },
         }
 
     @classmethod
@@ -194,6 +228,39 @@ class CameraComponent:
             dict,
         ):
             offset = {}
+
+        limits = data.get(
+            "limits",
+            {},
+        )
+
+        if not isinstance(
+            limits,
+            dict,
+        ):
+            limits = {}
+
+        dead_zone = data.get(
+            "dead_zone",
+            {},
+        )
+
+        if not isinstance(
+            dead_zone,
+            dict,
+        ):
+            dead_zone = {}
+
+        smoothing = data.get(
+            "smoothing",
+            {},
+        )
+
+        if not isinstance(
+            smoothing,
+            dict,
+        ):
+            smoothing = {}
 
         return cls(
             active=bool(
@@ -246,6 +313,81 @@ class CameraComponent:
                     "limit_to_scene",
                     True,
                 )
+            ),
+            custom_limits_enabled=bool(
+                limits.get(
+                    "custom_enabled",
+                    False,
+                )
+            ),
+            limit_left=float(
+                limits.get(
+                    "left",
+                    0.0,
+                )
+            ),
+            limit_top=float(
+                limits.get(
+                    "top",
+                    0.0,
+                )
+            ),
+            limit_right=float(
+                limits.get(
+                    "right",
+                    data.get(
+                        "width",
+                        480,
+                    ),
+                )
+            ),
+            limit_bottom=float(
+                limits.get(
+                    "bottom",
+                    data.get(
+                        "height",
+                        270,
+                    ),
+                )
+            ),
+            dead_zone_enabled=bool(
+                dead_zone.get(
+                    "enabled",
+                    False,
+                )
+            ),
+            dead_zone_width=max(
+                0.0,
+                float(
+                    dead_zone.get(
+                        "width",
+                        80.0,
+                    )
+                ),
+            ),
+            dead_zone_height=max(
+                0.0,
+                float(
+                    dead_zone.get(
+                        "height",
+                        50.0,
+                    )
+                ),
+            ),
+            smoothing_enabled=bool(
+                smoothing.get(
+                    "enabled",
+                    False,
+                )
+            ),
+            smoothing_speed=max(
+                0.01,
+                float(
+                    smoothing.get(
+                        "speed",
+                        5.0,
+                    )
+                ),
             ),
         )
 

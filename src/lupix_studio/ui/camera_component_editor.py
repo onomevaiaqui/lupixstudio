@@ -93,6 +93,11 @@ class CameraComponentEditor(QWidget):
                 color: #8d929b;
             }
 
+            QLabel#CameraSection {
+                font-weight: 600;
+                margin-top: 8px;
+            }
+
             QPushButton#RemoveCameraButton {
                 color: #ff6565;
                 border: 1px solid #d74646;
@@ -121,70 +126,135 @@ class CameraComponentEditor(QWidget):
         )
 
         self.width_spin = QSpinBox()
-
         self.width_spin.setRange(
             1,
             16384,
         )
-
         self.width_spin.setValue(
             480
         )
 
         self.height_spin = QSpinBox()
-
         self.height_spin.setRange(
             1,
             16384,
         )
-
         self.height_spin.setValue(
             270
         )
 
         self.zoom_spin = QDoubleSpinBox()
-
         self.zoom_spin.setRange(
             0.05,
             32.0,
         )
-
         self.zoom_spin.setDecimals(
             2
         )
-
         self.zoom_spin.setSingleStep(
             0.10
         )
-
         self.zoom_spin.setValue(
             1.0
         )
 
         self.offset_x_spin = QDoubleSpinBox()
-
         self.offset_x_spin.setRange(
             -100000.0,
             100000.0,
         )
-
         self.offset_x_spin.setDecimals(
             1
         )
 
         self.offset_y_spin = QDoubleSpinBox()
-
         self.offset_y_spin.setRange(
             -100000.0,
             100000.0,
         )
-
         self.offset_y_spin.setDecimals(
             1
         )
 
+        self.limit_section = QLabel(
+            "Limites"
+        )
+        self.limit_section.setObjectName(
+            "CameraSection"
+        )
+
         self.limit_checkbox = VisibleCheckBox(
-            "Limitar aos limites da cena"
+            "Limitar aos limites da fase"
+        )
+
+        self.custom_limits_checkbox = VisibleCheckBox(
+            "Usar limites personalizados"
+        )
+
+        self.limit_left_spin = self._limit_spin()
+        self.limit_top_spin = self._limit_spin()
+        self.limit_right_spin = self._limit_spin()
+        self.limit_bottom_spin = self._limit_spin()
+
+        self.dead_zone_section = QLabel(
+            "Dead Zone"
+        )
+        self.dead_zone_section.setObjectName(
+            "CameraSection"
+        )
+
+        self.dead_zone_checkbox = VisibleCheckBox(
+            "Ativar Dead Zone"
+        )
+
+        self.dead_zone_width_spin = QDoubleSpinBox()
+        self.dead_zone_width_spin.setRange(
+            0.0,
+            100000.0,
+        )
+        self.dead_zone_width_spin.setDecimals(
+            1
+        )
+        self.dead_zone_width_spin.setValue(
+            80.0
+        )
+
+        self.dead_zone_height_spin = QDoubleSpinBox()
+        self.dead_zone_height_spin.setRange(
+            0.0,
+            100000.0,
+        )
+        self.dead_zone_height_spin.setDecimals(
+            1
+        )
+        self.dead_zone_height_spin.setValue(
+            50.0
+        )
+
+        self.smoothing_section = QLabel(
+            "Suavização"
+        )
+        self.smoothing_section.setObjectName(
+            "CameraSection"
+        )
+
+        self.smoothing_checkbox = VisibleCheckBox(
+            "Ativar suavização"
+        )
+
+        self.smoothing_speed_spin = QDoubleSpinBox()
+        self.smoothing_speed_spin.setRange(
+            0.01,
+            100.0,
+        )
+        self.smoothing_speed_spin.setDecimals(
+            2
+        )
+        self.smoothing_speed_spin.setSingleStep(
+            0.25
+        )
+        self.smoothing_speed_spin.setValue(
+            5.0
         )
 
         self.follow_label = QLabel(
@@ -228,6 +298,47 @@ class CameraComponentEditor(QWidget):
             self.offset_y_spin,
         )
 
+        limits_form = QFormLayout()
+
+        limits_form.addRow(
+            "Esquerda:",
+            self.limit_left_spin,
+        )
+
+        limits_form.addRow(
+            "Topo:",
+            self.limit_top_spin,
+        )
+
+        limits_form.addRow(
+            "Direita:",
+            self.limit_right_spin,
+        )
+
+        limits_form.addRow(
+            "Baixo:",
+            self.limit_bottom_spin,
+        )
+
+        dead_zone_form = QFormLayout()
+
+        dead_zone_form.addRow(
+            "Largura:",
+            self.dead_zone_width_spin,
+        )
+
+        dead_zone_form.addRow(
+            "Altura:",
+            self.dead_zone_height_spin,
+        )
+
+        smoothing_form = QFormLayout()
+
+        smoothing_form.addRow(
+            "Velocidade:",
+            self.smoothing_speed_spin,
+        )
+
         self.remove_button = QPushButton(
             "Remover Camera"
         )
@@ -268,7 +379,43 @@ class CameraComponentEditor(QWidget):
         )
 
         layout.addWidget(
+            self.limit_section
+        )
+
+        layout.addWidget(
             self.limit_checkbox
+        )
+
+        layout.addWidget(
+            self.custom_limits_checkbox
+        )
+
+        layout.addLayout(
+            limits_form
+        )
+
+        layout.addWidget(
+            self.dead_zone_section
+        )
+
+        layout.addWidget(
+            self.dead_zone_checkbox
+        )
+
+        layout.addLayout(
+            dead_zone_form
+        )
+
+        layout.addWidget(
+            self.smoothing_section
+        )
+
+        layout.addWidget(
+            self.smoothing_checkbox
+        )
+
+        layout.addLayout(
+            smoothing_form
         )
 
         layout.addWidget(
@@ -289,38 +436,72 @@ class CameraComponentEditor(QWidget):
             self._remove_camera
         )
 
-        self.active_checkbox.toggled.connect(
-            self._apply
+        for widget in (
+            self.active_checkbox,
+            self.width_spin,
+            self.height_spin,
+            self.zoom_spin,
+            self.offset_x_spin,
+            self.offset_y_spin,
+            self.limit_checkbox,
+            self.custom_limits_checkbox,
+            self.limit_left_spin,
+            self.limit_top_spin,
+            self.limit_right_spin,
+            self.limit_bottom_spin,
+            self.dead_zone_checkbox,
+            self.dead_zone_width_spin,
+            self.dead_zone_height_spin,
+            self.smoothing_checkbox,
+            self.smoothing_speed_spin,
+        ):
+            if isinstance(
+                widget,
+                QCheckBox,
+            ):
+                widget.toggled.connect(
+                    self._apply
+                )
+            else:
+                widget.valueChanged.connect(
+                    self._apply
+                )
+
+        self.custom_limits_checkbox.toggled.connect(
+            self._update_dependency_controls
         )
 
-        self.width_spin.valueChanged.connect(
-            self._apply
+        self.dead_zone_checkbox.toggled.connect(
+            self._update_dependency_controls
         )
 
-        self.height_spin.valueChanged.connect(
-            self._apply
-        )
-
-        self.zoom_spin.valueChanged.connect(
-            self._apply
-        )
-
-        self.offset_x_spin.valueChanged.connect(
-            self._apply
-        )
-
-        self.offset_y_spin.valueChanged.connect(
-            self._apply
+        self.smoothing_checkbox.toggled.connect(
+            self._update_dependency_controls
         )
 
         self.limit_checkbox.toggled.connect(
-            self._apply
+            self._update_dependency_controls
         )
 
         self.set_context(
             None,
             None,
         )
+
+    @staticmethod
+    def _limit_spin() -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+
+        spin.setRange(
+            -1000000.0,
+            1000000.0,
+        )
+
+        spin.setDecimals(
+            1
+        )
+
+        return spin
 
     def set_context(
         self,
@@ -408,47 +589,116 @@ class CameraComponentEditor(QWidget):
                 camera.limit_to_scene
             )
 
+            self.custom_limits_checkbox.setChecked(
+                camera.custom_limits_enabled
+            )
+
+            self.limit_left_spin.setValue(
+                camera.limit_left
+            )
+
+            self.limit_top_spin.setValue(
+                camera.limit_top
+            )
+
+            self.limit_right_spin.setValue(
+                camera.limit_right
+            )
+
+            self.limit_bottom_spin.setValue(
+                camera.limit_bottom
+            )
+
+            self.dead_zone_checkbox.setChecked(
+                camera.dead_zone_enabled
+            )
+
+            self.dead_zone_width_spin.setValue(
+                camera.dead_zone_width
+            )
+
+            self.dead_zone_height_spin.setValue(
+                camera.dead_zone_height
+            )
+
+            self.smoothing_checkbox.setChecked(
+                camera.smoothing_enabled
+            )
+
+            self.smoothing_speed_spin.setValue(
+                camera.smoothing_speed
+            )
+
         finally:
             self._updating = False
+
+        self._update_dependency_controls()
 
     def _set_camera_controls_enabled(
         self,
         enabled: bool,
     ) -> None:
-        self.active_checkbox.setVisible(
-            enabled
+        for widget in (
+            self.active_checkbox,
+            self.width_spin,
+            self.height_spin,
+            self.zoom_spin,
+            self.offset_x_spin,
+            self.offset_y_spin,
+            self.limit_section,
+            self.limit_checkbox,
+            self.custom_limits_checkbox,
+            self.limit_left_spin,
+            self.limit_top_spin,
+            self.limit_right_spin,
+            self.limit_bottom_spin,
+            self.dead_zone_section,
+            self.dead_zone_checkbox,
+            self.dead_zone_width_spin,
+            self.dead_zone_height_spin,
+            self.smoothing_section,
+            self.smoothing_checkbox,
+            self.smoothing_speed_spin,
+            self.follow_label,
+            self.remove_button,
+        ):
+            widget.setVisible(
+                enabled
+            )
+
+    def _update_dependency_controls(
+        self,
+        *_args,
+    ) -> None:
+        custom_limits_enabled = (
+            self.limit_checkbox.isChecked()
+            and self.custom_limits_checkbox.isChecked()
         )
 
-        self.width_spin.setVisible(
-            enabled
+        for widget in (
+            self.limit_left_spin,
+            self.limit_top_spin,
+            self.limit_right_spin,
+            self.limit_bottom_spin,
+        ):
+            widget.setEnabled(
+                custom_limits_enabled
+            )
+
+        dead_zone_enabled = (
+            self.dead_zone_checkbox.isChecked()
         )
 
-        self.height_spin.setVisible(
-            enabled
+        self.dead_zone_width_spin.setEnabled(
+            dead_zone_enabled
         )
 
-        self.zoom_spin.setVisible(
-            enabled
+        self.dead_zone_height_spin.setEnabled(
+            dead_zone_enabled
         )
 
-        self.offset_x_spin.setVisible(
-            enabled
-        )
-
-        self.offset_y_spin.setVisible(
-            enabled
-        )
-
-        self.limit_checkbox.setVisible(
-            enabled
-        )
-
-        self.follow_label.setVisible(
-            enabled
-        )
-
-        self.remove_button.setVisible(
-            enabled
+        self.smoothing_speed_spin.setEnabled(
+            self.smoothing_checkbox.isChecked()
         )
 
     def _add_camera(self) -> None:
@@ -473,6 +723,16 @@ class CameraComponentEditor(QWidget):
             offset_x=0.0,
             offset_y=0.0,
             limit_to_scene=True,
+            custom_limits_enabled=False,
+            limit_left=0.0,
+            limit_top=0.0,
+            limit_right=float(width),
+            limit_bottom=float(height),
+            dead_zone_enabled=False,
+            dead_zone_width=80.0,
+            dead_zone_height=50.0,
+            smoothing_enabled=False,
+            smoothing_speed=5.0,
         )
 
         self.entity.refresh_kind()
@@ -550,6 +810,51 @@ class CameraComponentEditor(QWidget):
         camera.limit_to_scene = (
             self.limit_checkbox.isChecked()
         )
+
+        camera.custom_limits_enabled = (
+            self.custom_limits_checkbox.isChecked()
+        )
+
+        camera.limit_left = (
+            self.limit_left_spin.value()
+        )
+
+        camera.limit_top = (
+            self.limit_top_spin.value()
+        )
+
+        camera.limit_right = (
+            self.limit_right_spin.value()
+        )
+
+        camera.limit_bottom = (
+            self.limit_bottom_spin.value()
+        )
+
+        camera.dead_zone_enabled = (
+            self.dead_zone_checkbox.isChecked()
+        )
+
+        camera.dead_zone_width = max(
+            0.0,
+            self.dead_zone_width_spin.value(),
+        )
+
+        camera.dead_zone_height = max(
+            0.0,
+            self.dead_zone_height_spin.value(),
+        )
+
+        camera.smoothing_enabled = (
+            self.smoothing_checkbox.isChecked()
+        )
+
+        camera.smoothing_speed = max(
+            0.01,
+            self.smoothing_speed_spin.value(),
+        )
+
+        self._update_dependency_controls()
 
         self.camera_changed.emit(
             self.entity.id
