@@ -1493,8 +1493,6 @@ class PlayPreview(QWidget):
 
         self.stop_requested.emit()
 
-
-
     def _update_runtime(self) -> None:
         if self.runtime is None:
             return
@@ -1539,9 +1537,6 @@ class PlayPreview(QWidget):
             )
 
         self.canvas.refresh()
-
-
-
 
     def keyPressEvent(
         self,

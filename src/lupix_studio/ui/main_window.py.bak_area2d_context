@@ -363,11 +363,6 @@ class MainWindow(QMainWindow):
             self._stop_play_preview
         )
 
-        self.workspace.play_preview.area_event.connect(
-            self._on_play_area_event
-        )
-
-
         self.setCentralWidget(
             self.workspace
         )
@@ -759,20 +754,6 @@ class MainWindow(QMainWindow):
 
         self._update_play_actions()
 
-
-    def _on_play_area_event(
-        self,
-        message: str,
-    ) -> None:
-        self.console.append(
-            message
-        )
-
-    def _stop_play_preview(self) -> None:
-        if not self.playing:
-            return
-
-
     def _stop_play_preview(self) -> None:
         if not self.playing:
             return
@@ -984,8 +965,7 @@ class MainWindow(QMainWindow):
         )
 
         self.area2d_editor.set_context(
-            None,
-            None,
+            None
         )
 
         self.player_editor.set_context(
@@ -1132,8 +1112,7 @@ class MainWindow(QMainWindow):
         )
 
         self.area2d_editor.set_context(
-            None,
-            None,
+            None
         )
 
         self.player_editor.set_context(
@@ -1396,8 +1375,7 @@ class MainWindow(QMainWindow):
         )
 
         self.area2d_editor.set_context(
-            self.current_scene,
-            entity,
+            entity
         )
 
         self.player_editor.set_context(
@@ -1691,8 +1669,7 @@ class MainWindow(QMainWindow):
         )
 
         self.area2d_editor.set_context(
-            self.current_scene,
-            entity,
+            entity
         )
 
         self._save_current_scene()
@@ -1726,8 +1703,11 @@ class MainWindow(QMainWindow):
         )
 
         self.area2d_editor.set_context(
-            self.current_scene,
-            entity,
+            entity
+        )
+
+        self.area2d_editor.set_context(
+            entity
         )
 
         self._save_current_scene()

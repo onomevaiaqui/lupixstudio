@@ -304,19 +304,6 @@ class SceneTree(QWidget):
                 label,
             )
 
-        if entity.area2d is not None:
-            label = "Area2D"
-
-            if not entity.area2d.enabled:
-                label += " (desativada)"
-
-            self._add_component_item(
-                parent,
-                entity,
-                "area2d",
-                label,
-            )
-
         if entity.player_controller is not None:
             label = "Player Controller"
 

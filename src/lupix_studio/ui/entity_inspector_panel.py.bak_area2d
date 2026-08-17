@@ -167,7 +167,6 @@ class EntityInspectorPanel(QWidget):
     SECTION_CAMERA = "camera"
     SECTION_TILEMAP = "tilemap"
     SECTION_COLLIDER = "collider"
-    SECTION_AREA2D = "area2d"
     SECTION_PLAYER = "player"
 
     def __init__(
@@ -178,7 +177,6 @@ class EntityInspectorPanel(QWidget):
         camera_editor: QWidget,
         tilemap_editor: QWidget,
         collider_editor: QWidget,
-        area2d_editor: QWidget,
         player_editor: QWidget,
     ) -> None:
         super().__init__()
@@ -244,13 +242,6 @@ class EntityInspectorPanel(QWidget):
             self.SECTION_COLLIDER,
             "Collider",
             collider_editor,
-        )
-
-        self._add_section(
-            layout,
-            self.SECTION_AREA2D,
-            "Area2D",
-            area2d_editor,
         )
 
         self._add_section(

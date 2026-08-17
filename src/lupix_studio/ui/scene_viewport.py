@@ -336,6 +336,19 @@ class SceneCanvas(QGraphicsView):
 
                 has_visual = True
 
+            area2d_item = (
+                self._create_area2d_item(
+                    entity
+                )
+            )
+
+            if area2d_item is not None:
+                group.addToGroup(
+                    area2d_item
+                )
+
+                has_visual = True
+
             collision_group = (
                 self._create_tilemap_collision_group(
                     entity
@@ -1146,6 +1159,67 @@ class SceneCanvas(QGraphicsView):
 
         fill.setAlpha(
             35
+        )
+
+        item.setBrush(
+            fill
+        )
+
+        item.setZValue(
+            90000
+        )
+
+        return item
+
+    def _create_area2d_item(
+        self,
+        entity: SceneEntity,
+    ) -> QGraphicsRectItem | None:
+        area = entity.area2d
+
+        if (
+            area is None
+            or not area.enabled
+            or not area.debug_visible
+        ):
+            return None
+
+        item = QGraphicsRectItem(
+            -area.width / 2.0
+            + area.offset_x,
+            -area.height / 2.0
+            + area.offset_y,
+            area.width,
+            area.height,
+        )
+
+        color = QColor(
+            "#45d7ff"
+        )
+
+        pen = QPen(
+            color,
+            1,
+        )
+
+        pen.setCosmetic(
+            True
+        )
+
+        pen.setStyle(
+            Qt.PenStyle.DashLine
+        )
+
+        item.setPen(
+            pen
+        )
+
+        fill = QColor(
+            color
+        )
+
+        fill.setAlpha(
+            48
         )
 
         item.setBrush(

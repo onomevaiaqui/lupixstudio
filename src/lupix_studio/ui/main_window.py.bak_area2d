@@ -33,9 +33,6 @@ from lupix_studio.settings.recent_projects import (
 from lupix_studio.ui.animation_component_editor import (
     AnimationComponentEditor,
 )
-from lupix_studio.ui.area2d_component_editor import (
-    Area2DComponentEditor,
-)
 from lupix_studio.ui.asset_browser import AssetBrowser
 from lupix_studio.ui.asset_inspector import (
     AssetInspector,
@@ -363,11 +360,6 @@ class MainWindow(QMainWindow):
             self._stop_play_preview
         )
 
-        self.workspace.play_preview.area_event.connect(
-            self._on_play_area_event
-        )
-
-
         self.setCentralWidget(
             self.workspace
         )
@@ -433,7 +425,6 @@ class MainWindow(QMainWindow):
         self.camera_editor = CameraComponentEditor()
         self.tilemap_editor = TileMapComponentEditor()
         self.collider_editor = ColliderComponentEditor()
-        self.area2d_editor = Area2DComponentEditor()
         self.player_editor = PlayerControllerEditor()
 
         self.entity_panel = EntityInspectorPanel(
@@ -443,7 +434,6 @@ class MainWindow(QMainWindow):
             camera_editor=self.camera_editor,
             tilemap_editor=self.tilemap_editor,
             collider_editor=self.collider_editor,
-            area2d_editor=self.area2d_editor,
             player_editor=self.player_editor,
         )
 
@@ -491,10 +481,6 @@ class MainWindow(QMainWindow):
 
         self.collider_editor.collider_changed.connect(
             self._on_collider_changed
-        )
-
-        self.area2d_editor.area2d_changed.connect(
-            self._on_area2d_changed
         )
 
         self.player_editor.player_changed.connect(
@@ -759,20 +745,6 @@ class MainWindow(QMainWindow):
 
         self._update_play_actions()
 
-
-    def _on_play_area_event(
-        self,
-        message: str,
-    ) -> None:
-        self.console.append(
-            message
-        )
-
-    def _stop_play_preview(self) -> None:
-        if not self.playing:
-            return
-
-
     def _stop_play_preview(self) -> None:
         if not self.playing:
             return
@@ -983,11 +955,6 @@ class MainWindow(QMainWindow):
             None
         )
 
-        self.area2d_editor.set_context(
-            None,
-            None,
-        )
-
         self.player_editor.set_context(
             None
         )
@@ -1129,11 +1096,6 @@ class MainWindow(QMainWindow):
 
         self.collider_editor.set_context(
             None
-        )
-
-        self.area2d_editor.set_context(
-            None,
-            None,
         )
 
         self.player_editor.set_context(
@@ -1352,10 +1314,6 @@ class MainWindow(QMainWindow):
                 None
             )
 
-            self.area2d_editor.set_context(
-                None
-            )
-
             self.player_editor.set_context(
                 None
             )
@@ -1393,11 +1351,6 @@ class MainWindow(QMainWindow):
 
         self.collider_editor.set_context(
             entity
-        )
-
-        self.area2d_editor.set_context(
-            self.current_scene,
-            entity,
         )
 
         self.player_editor.set_context(
@@ -1455,9 +1408,6 @@ class MainWindow(QMainWindow):
             ),
             "collider": (
                 EntityInspectorPanel.SECTION_COLLIDER
-            ),
-            "area2d": (
-                EntityInspectorPanel.SECTION_AREA2D
             ),
             "player": (
                 EntityInspectorPanel.SECTION_PLAYER
@@ -1688,46 +1638,6 @@ class MainWindow(QMainWindow):
 
         self.collider_editor.set_context(
             entity
-        )
-
-        self.area2d_editor.set_context(
-            self.current_scene,
-            entity,
-        )
-
-        self._save_current_scene()
-
-
-    def _on_area2d_changed(
-        self,
-        entity_id: str,
-    ) -> None:
-        if (
-            self.current_scene is None
-            or self.playing
-        ):
-            return
-
-        entity = self.current_scene.entity(
-            entity_id
-        )
-
-        if entity is None:
-            return
-
-        self.workspace.scene_viewport.update_entity(
-            entity_id
-        )
-
-        self.scene_tree.refresh()
-
-        self.entity_inspector.show_entity(
-            entity
-        )
-
-        self.area2d_editor.set_context(
-            self.current_scene,
-            entity,
         )
 
         self._save_current_scene()

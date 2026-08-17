@@ -418,6 +418,99 @@ class TileMapComponent:
 
 
 @dataclass(slots=True)
+class Area2DComponent:
+    """Área de detecção 2D sem colisão física."""
+
+    enabled: bool = True
+    width: float = 64.0
+    height: float = 64.0
+    offset_x: float = 0.0
+    offset_y: float = 0.0
+    detect_player: bool = True
+    debug_visible: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "enabled": self.enabled,
+            "width": self.width,
+            "height": self.height,
+            "offset": {
+                "x": self.offset_x,
+                "y": self.offset_y,
+            },
+            "detect_player": self.detect_player,
+            "debug_visible": self.debug_visible,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> Area2DComponent:
+        offset = data.get(
+            "offset",
+            {},
+        )
+
+        if not isinstance(
+            offset,
+            dict,
+        ):
+            offset = {}
+
+        return cls(
+            enabled=bool(
+                data.get(
+                    "enabled",
+                    True,
+                )
+            ),
+            width=max(
+                0.0,
+                float(
+                    data.get(
+                        "width",
+                        64.0,
+                    )
+                ),
+            ),
+            height=max(
+                0.0,
+                float(
+                    data.get(
+                        "height",
+                        64.0,
+                    )
+                ),
+            ),
+            offset_x=float(
+                offset.get(
+                    "x",
+                    0.0,
+                )
+            ),
+            offset_y=float(
+                offset.get(
+                    "y",
+                    0.0,
+                )
+            ),
+            detect_player=bool(
+                data.get(
+                    "detect_player",
+                    True,
+                )
+            ),
+            debug_visible=bool(
+                data.get(
+                    "debug_visible",
+                    True,
+                )
+            ),
+        )
+
+
+@dataclass(slots=True)
 class ColliderComponent:
     enabled: bool = True
     width: float = 16.0
@@ -601,6 +694,7 @@ class SceneEntity:
     camera: CameraComponent | None = None
     tilemap: TileMapComponent | None = None
     collider: ColliderComponent | None = None
+    area2d: Area2DComponent | None = None
     player_controller: PlayerControllerComponent | None = None
 
     def refresh_kind(self) -> None:
@@ -618,6 +712,10 @@ class SceneEntity:
 
         if self.collider is not None:
             self.kind = "collider"
+            return
+
+        if self.area2d is not None:
+            self.kind = "area2d"
             return
 
         if self.player_controller is not None:
@@ -657,6 +755,11 @@ class SceneEntity:
         if self.collider is not None:
             data["collider"] = (
                 self.collider.to_dict()
+            )
+
+        if self.area2d is not None:
+            data["area2d"] = (
+                self.area2d.to_dict()
             )
 
         if self.player_controller is not None:
@@ -702,6 +805,10 @@ class SceneEntity:
             "collider"
         )
 
+        area2d_data = data.get(
+            "area2d"
+        )
+
         controller_data = data.get(
             "player_controller"
         )
@@ -711,6 +818,7 @@ class SceneEntity:
         camera: CameraComponent | None = None
         tilemap: TileMapComponent | None = None
         collider: ColliderComponent | None = None
+        area2d: Area2DComponent | None = None
         player_controller: PlayerControllerComponent | None = None
 
         if isinstance(
@@ -756,6 +864,14 @@ class SceneEntity:
             )
 
         if isinstance(
+            area2d_data,
+            dict,
+        ):
+            area2d = Area2DComponent.from_dict(
+                area2d_data
+            )
+
+        if isinstance(
             controller_data,
             dict,
         ):
@@ -795,6 +911,7 @@ class SceneEntity:
             camera=camera,
             tilemap=tilemap,
             collider=collider,
+            area2d=area2d,
             player_controller=player_controller,
         )
 
@@ -813,7 +930,7 @@ class SceneResource:
         default_factory=list
     )
 
-    format: int = 7
+    format: int = 8
     type: str = "scene"
 
     def add_entity(

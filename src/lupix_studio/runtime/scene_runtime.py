@@ -57,6 +57,14 @@ class CollisionRect:
         return self.y + self.height
 
 
+@dataclass(slots=True)
+class Area2DEvent:
+    """Evento gerado quando o Player entra ou sai de uma Area2D."""
+
+    area_id: str
+    event: str
+
+
 class SceneRuntime:
     """Estado executável e independente de uma Scene."""
 
@@ -90,6 +98,21 @@ class SceneRuntime:
         self.collision_rects: list[
             CollisionRect
         ] = []
+
+        self.area_inside: dict[
+            str,
+            bool,
+        ] = {}
+
+        self.area_events: list[
+            Area2DEvent
+        ] = []
+
+        for entity in self.scene.entities:
+            if entity.area2d is not None:
+                self.area_inside[
+                    entity.id
+                ] = False
 
         self.world_left = 0.0
         self.world_top = 0.0
@@ -131,6 +154,10 @@ class SceneRuntime:
                 state,
                 0.0,
                 force_reset=True,
+            )
+
+            self._sync_area2d_state(
+                player
             )
 
     def stop(self) -> None:
@@ -227,6 +254,10 @@ class SceneRuntime:
             player,
             state,
             delta,
+        )
+
+        self._update_area2d_events(
+            player
         )
 
         state.jump_was_pressed = (
@@ -807,6 +838,164 @@ class SceneRuntime:
             and first.top < second.bottom
             and first.bottom > second.top
         )
+
+    def consume_area_events(
+        self,
+    ) -> list[Area2DEvent]:
+        """Retorna os eventos pendentes e limpa a fila."""
+
+        events = list(
+            self.area_events
+        )
+
+        self.area_events.clear()
+
+        return events
+
+    def _area2d_rect(
+        self,
+        entity: SceneEntity,
+    ) -> CollisionRect | None:
+        area = entity.area2d
+
+        if (
+            area is None
+            or not area.enabled
+            or not area.detect_player
+        ):
+            return None
+
+        center_x = (
+            entity.transform.x
+            + area.offset_x
+        )
+
+        center_y = (
+            entity.transform.y
+            + area.offset_y
+        )
+
+        return CollisionRect(
+            x=(
+                center_x
+                - area.width / 2.0
+            ),
+            y=(
+                center_y
+                - area.height / 2.0
+            ),
+            width=area.width,
+            height=area.height,
+        )
+
+    def _player_area_probe(
+        self,
+        player: SceneEntity,
+    ) -> CollisionRect:
+        player_rect = (
+            self._player_collision_rect(
+                player
+            )
+        )
+
+        if player_rect is not None:
+            return player_rect
+
+        return CollisionRect(
+            x=player.transform.x - 0.5,
+            y=player.transform.y - 0.5,
+            width=1.0,
+            height=1.0,
+        )
+
+    def _sync_area2d_state(
+        self,
+        player: SceneEntity,
+    ) -> None:
+        probe = self._player_area_probe(
+            player
+        )
+
+        for entity in self.scene.entities:
+            if entity.area2d is None:
+                continue
+
+            area_rect = self._area2d_rect(
+                entity
+            )
+
+            inside = False
+
+            if area_rect is not None:
+                inside = (
+                    self._rects_intersect(
+                        probe,
+                        area_rect,
+                    )
+                )
+
+            self.area_inside[
+                entity.id
+            ] = inside
+
+    def _update_area2d_events(
+        self,
+        player: SceneEntity,
+    ) -> None:
+        probe = self._player_area_probe(
+            player
+        )
+
+        for entity in self.scene.entities:
+            if entity.area2d is None:
+                continue
+
+            area_rect = self._area2d_rect(
+                entity
+            )
+
+            inside_now = False
+
+            if area_rect is not None:
+                inside_now = (
+                    self._rects_intersect(
+                        probe,
+                        area_rect,
+                    )
+                )
+
+            inside_before = (
+                self.area_inside.get(
+                    entity.id,
+                    False,
+                )
+            )
+
+            if (
+                inside_now
+                and not inside_before
+            ):
+                self.area_events.append(
+                    Area2DEvent(
+                        area_id=entity.id,
+                        event="entered",
+                    )
+                )
+
+            elif (
+                inside_before
+                and not inside_now
+            ):
+                self.area_events.append(
+                    Area2DEvent(
+                        area_id=entity.id,
+                        event="exited",
+                    )
+                )
+
+            self.area_inside[
+                entity.id
+            ] = inside_now
 
     def _load_world_bounds(
         self,
