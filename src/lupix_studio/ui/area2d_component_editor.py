@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -26,6 +30,7 @@ class Area2DComponentEditor(QWidget):
     def __init__(self) -> None:
         super().__init__()
 
+        self.project_root: Path | None = None
         self.scene: SceneResource | None = None
         self.entity: SceneEntity | None = None
         self._updating = False
@@ -39,7 +44,9 @@ class Area2DComponentEditor(QWidget):
             "Adicionar Area2D"
         )
 
-        self.enabled_checkbox = QCheckBox("Ativa")
+        self.enabled_checkbox = QCheckBox(
+            "Ativa"
+        )
         self.detect_player_checkbox = QCheckBox(
             "Detectar Player"
         )
@@ -52,15 +59,57 @@ class Area2DComponentEditor(QWidget):
         self.offset_x_spin = self._offset_spin()
         self.offset_y_spin = self._offset_spin()
 
-        form = QFormLayout()
-        form.addRow("Largura:", self.width_spin)
-        form.addRow("Altura:", self.height_spin)
-        form.addRow("Offset X:", self.offset_x_spin)
-        form.addRow("Offset Y:", self.offset_y_spin)
+        size_form = QFormLayout()
+        size_form.addRow("Largura:", self.width_spin)
+        size_form.addRow("Altura:", self.height_spin)
+        size_form.addRow("Offset X:", self.offset_x_spin)
+        size_form.addRow("Offset Y:", self.offset_y_spin)
+
+        self.events_title = QLabel("Eventos")
+        self.events_title.setStyleSheet(
+            "font-weight: 600; margin-top: 8px;"
+        )
+
+        self.enter_action_combo = QComboBox()
+        self.enter_action_combo.addItem(
+            "Nenhuma",
+            "none",
+        )
+        self.enter_action_combo.addItem(
+            "Trocar Cena",
+            "change_scene",
+        )
+
+        self.target_scene_combo = QComboBox()
+        self.target_scene_combo.setMinimumWidth(180)
+
+        self.refresh_scenes_button = QPushButton("↻")
+        self.refresh_scenes_button.setToolTip(
+            "Atualizar lista de cenas"
+        )
+        self.refresh_scenes_button.setFixedWidth(34)
+
+        selector_layout = QHBoxLayout()
+        selector_layout.setContentsMargins(0, 0, 0, 0)
+        selector_layout.addWidget(self.target_scene_combo)
+        selector_layout.addWidget(self.refresh_scenes_button)
+
+        selector_widget = QWidget()
+        selector_widget.setLayout(selector_layout)
+
+        event_form = QFormLayout()
+        event_form.addRow(
+            "Ao entrar:",
+            self.enter_action_combo,
+        )
+        event_form.addRow(
+            "Cena destino:",
+            selector_widget,
+        )
 
         self.hint_label = QLabel(
-            "Area2D não bloqueia o personagem. "
-            "Ela apenas detecta entrada e saída do Player."
+            "A lista mostra automaticamente as cenas "
+            "salvas na pasta scenes do projeto."
         )
         self.hint_label.setWordWrap(True)
 
@@ -74,9 +123,11 @@ class Area2DComponentEditor(QWidget):
         layout.addWidget(self.status_label)
         layout.addWidget(self.add_button)
         layout.addWidget(self.enabled_checkbox)
-        layout.addLayout(form)
+        layout.addLayout(size_form)
         layout.addWidget(self.detect_player_checkbox)
         layout.addWidget(self.debug_visible_checkbox)
+        layout.addWidget(self.events_title)
+        layout.addLayout(event_form)
         layout.addWidget(self.hint_label)
         layout.addWidget(self.remove_button)
         layout.addStretch()
@@ -109,8 +160,21 @@ class Area2DComponentEditor(QWidget):
         self.offset_y_spin.valueChanged.connect(
             self._apply
         )
+        self.enter_action_combo.currentIndexChanged.connect(
+            self._on_action_changed
+        )
+        self.target_scene_combo.currentIndexChanged.connect(
+            self._apply
+        )
+        self.refresh_scenes_button.clicked.connect(
+            self.refresh_scene_list
+        )
 
-        self.set_context(None, None)
+        self.set_context(
+            None,
+            None,
+            None,
+        )
 
     @staticmethod
     def _size_spin(
@@ -125,10 +189,7 @@ class Area2DComponentEditor(QWidget):
     @staticmethod
     def _offset_spin() -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
-        spin.setRange(
-            -100000.0,
-            100000.0,
-        )
+        spin.setRange(-100000.0, 100000.0)
         spin.setDecimals(1)
         return spin
 
@@ -136,10 +197,135 @@ class Area2DComponentEditor(QWidget):
         self,
         scene: SceneResource | None,
         entity: SceneEntity | None,
+        project_root: Path | None = None,
     ) -> None:
         self.scene = scene
         self.entity = entity
+
+        if project_root is not None:
+            self.project_root = Path(
+                project_root
+            ).resolve()
+        elif scene is None:
+            self.project_root = None
+
         self._refresh()
+
+    def refresh_scene_list(
+        self,
+    ) -> None:
+        selected_path = ""
+
+        if (
+            self.entity is not None
+            and self.entity.area2d is not None
+        ):
+            selected_path = (
+                self.entity.area2d.target_scene
+            )
+
+        self._populate_scene_combo(
+            selected_path
+        )
+
+    def _populate_scene_combo(
+        self,
+        selected_path: str = "",
+    ) -> None:
+        previous_updating = self._updating
+        self._updating = True
+
+        try:
+            self.target_scene_combo.clear()
+            self.target_scene_combo.addItem(
+                "Selecione uma cena...",
+                "",
+            )
+
+            if self.project_root is None:
+                self.target_scene_combo.addItem(
+                    "Projeto não carregado",
+                    "",
+                )
+                return
+
+            scenes_dir = (
+                self.project_root
+                / "scenes"
+            )
+
+            if not scenes_dir.exists():
+                self.target_scene_combo.addItem(
+                    "Nenhuma pasta scenes encontrada",
+                    "",
+                )
+                return
+
+            scene_files = sorted(
+                scenes_dir.rglob("*.scene"),
+                key=lambda path: str(
+                    path.relative_to(
+                        scenes_dir
+                    )
+                ).lower(),
+            )
+
+            if not scene_files:
+                self.target_scene_combo.addItem(
+                    "Nenhuma cena salva",
+                    "",
+                )
+                return
+
+            normalized_selected = (
+                selected_path.replace(
+                    "\\",
+                    "/",
+                )
+            )
+
+            selected_index = 0
+
+            for scene_path in scene_files:
+                relative_project = (
+                    scene_path.relative_to(
+                        self.project_root
+                    )
+                )
+
+                stored_path = (
+                    relative_project.as_posix()
+                )
+
+                display_path = (
+                    scene_path.relative_to(
+                        scenes_dir
+                    )
+                )
+
+                display_name = (
+                    display_path.with_suffix(
+                        ""
+                    ).as_posix()
+                )
+
+                self.target_scene_combo.addItem(
+                    display_name,
+                    stored_path,
+                )
+
+                if stored_path == normalized_selected:
+                    selected_index = (
+                        self.target_scene_combo.count()
+                        - 1
+                    )
+
+            self.target_scene_combo.setCurrentIndex(
+                selected_index
+            )
+
+        finally:
+            self._updating = previous_updating
 
     def _refresh(self) -> None:
         self._updating = True
@@ -187,6 +373,24 @@ class Area2DComponentEditor(QWidget):
                 area.debug_visible
             )
 
+            action_index = (
+                self.enter_action_combo.findData(
+                    area.on_enter_action
+                )
+            )
+
+            action_index = max(action_index, 0)
+
+            self.enter_action_combo.setCurrentIndex(
+                action_index
+            )
+
+            self._populate_scene_combo(
+                area.target_scene
+            )
+
+            self._update_target_scene_state()
+
         finally:
             self._updating = False
 
@@ -202,12 +406,42 @@ class Area2DComponentEditor(QWidget):
             self.offset_y_spin,
             self.detect_player_checkbox,
             self.debug_visible_checkbox,
+            self.events_title,
+            self.enter_action_combo,
+            self.target_scene_combo,
+            self.refresh_scenes_button,
             self.hint_label,
             self.remove_button,
         ):
             widget.setVisible(visible)
 
-    def _add_area2d(self) -> None:
+        if visible:
+            self._update_target_scene_state()
+
+    def _update_target_scene_state(
+        self,
+    ) -> None:
+        enabled = (
+            self.enter_action_combo.currentData()
+            == "change_scene"
+        )
+
+        self.target_scene_combo.setEnabled(
+            enabled
+        )
+        self.refresh_scenes_button.setEnabled(
+            enabled
+        )
+
+    def _on_action_changed(
+        self,
+    ) -> None:
+        self._update_target_scene_state()
+        self._apply()
+
+    def _add_area2d(
+        self,
+    ) -> None:
         if self.entity is None:
             return
 
@@ -222,7 +456,9 @@ class Area2DComponentEditor(QWidget):
             self.entity.id
         )
 
-    def _remove_area2d(self) -> None:
+    def _remove_area2d(
+        self,
+    ) -> None:
         if self.entity is None:
             return
 
@@ -234,7 +470,9 @@ class Area2DComponentEditor(QWidget):
             self.entity.id
         )
 
-    def _apply(self) -> None:
+    def _apply(
+        self,
+    ) -> None:
         if self._updating:
             return
 
@@ -268,6 +506,14 @@ class Area2DComponentEditor(QWidget):
         )
         area.debug_visible = (
             self.debug_visible_checkbox.isChecked()
+        )
+        area.on_enter_action = str(
+            self.enter_action_combo.currentData()
+            or "none"
+        )
+        area.target_scene = str(
+            self.target_scene_combo.currentData()
+            or ""
         )
 
         self.area2d_changed.emit(

@@ -986,11 +986,6 @@ class MainWindow(QMainWindow):
         self.area2d_editor.set_context(
             None,
             None,
-            (
-                self.current_project.root
-                if self.current_project is not None
-                else None
-            ),
         )
 
         self.player_editor.set_context(
@@ -1139,11 +1134,6 @@ class MainWindow(QMainWindow):
         self.area2d_editor.set_context(
             None,
             None,
-            (
-                self.current_project.root
-                if self.current_project is not None
-                else None
-            ),
         )
 
         self.player_editor.set_context(
@@ -1408,11 +1398,6 @@ class MainWindow(QMainWindow):
         self.area2d_editor.set_context(
             self.current_scene,
             entity,
-            (
-                self.current_project.root
-                if self.current_project is not None
-                else None
-            ),
         )
 
         self.player_editor.set_context(
@@ -1708,11 +1693,6 @@ class MainWindow(QMainWindow):
         self.area2d_editor.set_context(
             self.current_scene,
             entity,
-            (
-                self.current_project.root
-                if self.current_project is not None
-                else None
-            ),
         )
 
         self._save_current_scene()
@@ -1748,11 +1728,6 @@ class MainWindow(QMainWindow):
         self.area2d_editor.set_context(
             self.current_scene,
             entity,
-            (
-                self.current_project.root
-                if self.current_project is not None
-                else None
-            ),
         )
 
         self._save_current_scene()

@@ -429,6 +429,11 @@ class Area2DComponent:
     detect_player: bool = True
     debug_visible: bool = True
 
+    # Ação executada quando o Player entra na área.
+    # Valores atuais: "none" e "change_scene".
+    on_enter_action: str = "none"
+    target_scene: str = ""
+
     def to_dict(self) -> dict[str, object]:
         return {
             "enabled": self.enabled,
@@ -440,6 +445,10 @@ class Area2DComponent:
             },
             "detect_player": self.detect_player,
             "debug_visible": self.debug_visible,
+            "on_enter": {
+                "action": self.on_enter_action,
+                "target_scene": self.target_scene,
+            },
         }
 
     @classmethod
@@ -457,6 +466,17 @@ class Area2DComponent:
             dict,
         ):
             offset = {}
+
+        on_enter = data.get(
+            "on_enter",
+            {},
+        )
+
+        if not isinstance(
+            on_enter,
+            dict,
+        ):
+            on_enter = {}
 
         return cls(
             enabled=bool(
@@ -506,6 +526,20 @@ class Area2DComponent:
                     "debug_visible",
                     True,
                 )
+            ),
+            on_enter_action=str(
+                on_enter.get(
+                    "action",
+                    "none",
+                )
+                or "none"
+            ),
+            target_scene=str(
+                on_enter.get(
+                    "target_scene",
+                    "",
+                )
+                or ""
             ),
         )
 

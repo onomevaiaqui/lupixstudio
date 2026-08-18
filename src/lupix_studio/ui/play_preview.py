@@ -34,6 +34,7 @@ from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
 )
+from lupix_studio.scene.serializer import SceneSerializer
 from lupix_studio.tilemap.serializer import (
     TileMapSerializer,
 )
@@ -1360,6 +1361,7 @@ class PlayPreview(QWidget):
 
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
+        self.scene_serializer = SceneSerializer()
 
         self.timer = QTimer(
             self
@@ -1493,8 +1495,6 @@ class PlayPreview(QWidget):
 
         self.stop_requested.emit()
 
-
-
     def _update_runtime(self) -> None:
         if self.runtime is None:
             return
@@ -1522,26 +1522,192 @@ class PlayPreview(QWidget):
                 message = (
                     f"Area2D entered: {area_name}"
                 )
-
             elif area_event.event == "exited":
                 message = (
                     f"Area2D exited: {area_name}"
                 )
-
             else:
                 message = (
                     f"Area2D {area_event.event}: "
                     f"{area_name}"
                 )
 
-            self.area_event.emit(
-                message
-            )
+            self.area_event.emit(message)
+
+            if (
+                area_event.event == "entered"
+                and area_entity is not None
+                and area_entity.area2d is not None
+                and area_entity.area2d.on_enter_action
+                == "change_scene"
+            ):
+                target_scene = (
+                    area_entity.area2d.target_scene.strip()
+                )
+
+                if (
+                    target_scene
+                    and self._change_scene(target_scene)
+                ):
+                    return
 
         self.canvas.refresh()
 
+    def _change_scene(
+        self,
+        target_scene: str,
+    ) -> bool:
+        if self.project_root is None:
+            self.area_event.emit(
+                "Troca de cena falhou: projeto não carregado."
+            )
+            return False
 
+        relative = Path(target_scene)
 
+        if relative.suffix.lower() != ".scene":
+            relative = relative.with_suffix(".scene")
+
+        candidates: list[Path] = []
+
+        if relative.is_absolute():
+            candidates.append(relative)
+        else:
+            candidates.append(
+                self.project_root / relative
+            )
+
+            if (
+                not relative.parts
+                or relative.parts[0].lower() != "scenes"
+            ):
+                candidates.append(
+                    self.project_root
+                    / "scenes"
+                    / relative
+                )
+
+        scene_path = next(
+            (
+                path
+                for path in candidates
+                if path.exists()
+            ),
+            None,
+        )
+
+        if scene_path is None:
+            self.area_event.emit(
+                "Troca de cena falhou: "
+                f"{target_scene} não encontrada."
+            )
+            return False
+
+        source_player = None
+
+        if self.runtime is not None:
+            source_player = (
+                self.runtime.player
+            )
+
+        try:
+            scene = self.scene_serializer.load(
+                scene_path
+            )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ) as error:
+            self.area_event.emit(
+                "Troca de cena falhou: "
+                f"{error}"
+            )
+            return False
+
+        target_player = (
+            scene.player_entity()
+        )
+
+        if (
+            target_player is None
+            and source_player is not None
+        ):
+            target_player = (
+                SceneEntity.from_dict(
+                    source_player.to_dict()
+                )
+            )
+
+            scene.add_entity(
+                target_player
+            )
+
+            self.area_event.emit(
+                "Player transportado para "
+                f"{scene.name}"
+            )
+
+        if target_player is not None:
+            spawn = (
+                self._default_spawn_for_scene(
+                    scene
+                )
+            )
+
+            if spawn is not None:
+                target_player.transform.x = (
+                    spawn.transform.x
+                )
+
+                target_player.transform.y = (
+                    spawn.transform.y
+                )
+
+                self.area_event.emit(
+                    "Spawn encontrado: "
+                    f"{spawn.name}"
+                )
+
+            elif source_player is not None:
+                target_player.transform.x = (
+                    source_player.transform.x
+                )
+
+                target_player.transform.y = (
+                    source_player.transform.y
+                )
+
+        self.area_event.emit(
+            f"Trocando cena: {scene.name}"
+        )
+
+        self.start(
+            self.project_root,
+            scene,
+        )
+
+        return True
+
+    @staticmethod
+    def _default_spawn_for_scene(
+        scene: SceneResource,
+    ) -> SceneEntity | None:
+        preferred_names = {
+            "spawnpoint",
+            "spawn_point",
+            "player_spawn",
+            "spawn",
+        }
+
+        for entity in scene.entities:
+            if (
+                entity.name.strip().lower()
+                in preferred_names
+            ):
+                return entity
+
+        return None
 
     def keyPressEvent(
         self,
