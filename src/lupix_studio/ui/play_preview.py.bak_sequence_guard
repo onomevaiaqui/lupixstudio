@@ -57,7 +57,6 @@ class PlayCanvas(QGraphicsView):
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
 
-
         self.follow_active_camera = True
 
         self._camera_center_x: float | None = None
@@ -1505,8 +1504,6 @@ class PlayPreview(QWidget):
 
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
-
-        self.active_area_sequences: set[str] = set()
         self.scene_serializer = SceneSerializer()
 
         self.timer = QTimer(
@@ -1600,8 +1597,6 @@ class PlayPreview(QWidget):
     ) -> None:
         self.stop_runtime()
 
-        self.active_area_sequences.clear()
-
         self.project_root = (
             project_root.resolve()
         )
@@ -1680,9 +1675,7 @@ class PlayPreview(QWidget):
                     f"{area_name}"
                 )
 
-            self.area_event.emit(
-                message
-            )
+            self.area_event.emit(message)
 
             if (
                 area_event.event != "entered"
@@ -1696,26 +1689,12 @@ class PlayPreview(QWidget):
             )
 
             if actions:
-                area_id = area_entity.id
-
-                if (
-                    area_id
-                    in self.active_area_sequences
-                ):
-                    continue
-
-                self.active_area_sequences.add(
-                    area_id
-                )
-
                 self._run_area_actions(
-                    area_id,
                     actions,
                     0,
                 )
                 continue
 
-            # Compatibilidade com cenas antigas.
             legacy_action = (
                 area_entity.area2d.on_enter_action
             )
@@ -1770,33 +1749,19 @@ class PlayPreview(QWidget):
                     QTimer.singleShot(
                         3000,
                         lambda scene=target_scene: (
-                            self._change_scene(
-                                scene
-                            )
+                            self._change_scene(scene)
                         ),
                     )
                     return
 
         self.canvas.refresh()
 
-    def _finish_area_sequence(
-        self,
-        area_id: str,
-    ) -> None:
-        self.active_area_sequences.discard(
-            area_id
-        )
-
     def _run_area_actions(
         self,
-        area_id: str,
         actions: list[object],
         index: int = 0,
     ) -> None:
         if index >= len(actions):
-            self._finish_area_sequence(
-                area_id
-            )
             return
 
         action = actions[index]
@@ -1824,13 +1789,11 @@ class PlayPreview(QWidget):
                 self.area_event.emit(
                     f"Mensagem: {message_text}"
                 )
-
                 self.canvas.show_message(
                     message_text
                 )
 
             self._run_area_actions(
-                area_id,
                 actions,
                 index + 1,
             )
@@ -1850,12 +1813,8 @@ class PlayPreview(QWidget):
             )
 
             QTimer.singleShot(
-                int(
-                    wait_seconds
-                    * 1000
-                ),
+                int(wait_seconds * 1000),
                 lambda: self._run_area_actions(
-                    area_id,
                     actions,
                     index + 1,
                 ),
@@ -1872,10 +1831,6 @@ class PlayPreview(QWidget):
                 or ""
             ).strip()
 
-            self._finish_area_sequence(
-                area_id
-            )
-
             if target_scene:
                 self._change_scene(
                     target_scene
@@ -1884,7 +1839,6 @@ class PlayPreview(QWidget):
             return
 
         self._run_area_actions(
-            area_id,
             actions,
             index + 1,
         )

@@ -13,8 +13,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QStyle,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -401,59 +399,13 @@ class Area2DComponentEditor(QWidget):
             )
         )
 
-        up_button = QToolButton()
-        down_button = QToolButton()
-        remove_button = QToolButton()
+        up_button = QPushButton("Subir")
+        down_button = QPushButton("Descer")
+        remove_button = QPushButton("Remover")
 
-        up_button.setText("↑")
-        down_button.setText("↓")
-
-        arrow_style = (
-            "QToolButton {"
-            " color: #f2f2f2;"
-            " background-color: #2a2d33;"
-            " border: 1px solid #3a3e46;"
-            " border-radius: 4px;"
-            " font-size: 18px;"
-            " font-weight: 700;"
-            " padding: 0px;"
-            " }"
-            " QToolButton:hover {"
-            " color: #ffffff;"
-            " background-color: #343840;"
-            " border-color: #555b66;"
-            " }"
-            " QToolButton:pressed {"
-            " background-color: #202329;"
-            " }"
-            " QToolButton:disabled {"
-            " color: #666b73;"
-            " background-color: #24272c;"
-            " border-color: #30343a;"
-            " }"
-        )
-
-        up_button.setStyleSheet(arrow_style)
-        down_button.setStyleSheet(arrow_style)
-        remove_button.setIcon(
-            self.style().standardIcon(
-                QStyle.StandardPixmap.SP_TrashIcon
-            )
-        )
-
-        up_button.setToolTip("Mover ação para cima")
-        down_button.setToolTip("Mover ação para baixo")
-        remove_button.setToolTip("Excluir ação")
-
-        for button in (
-            up_button,
-            down_button,
-            remove_button,
-        ):
-            button.setFixedSize(
-                34,
-                30,
-            )
+        up_button.setFixedWidth(52)
+        down_button.setFixedWidth(60)
+        remove_button.setFixedWidth(68)
 
         up_button.setEnabled(
             index > 0

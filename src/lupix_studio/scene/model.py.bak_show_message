@@ -418,54 +418,6 @@ class TileMapComponent:
 
 
 @dataclass(slots=True)
-class Area2DAction:
-    """Uma ação executada por um evento de Area2D."""
-
-    action: str = "none"
-    message_text: str = ""
-    target_scene: str = ""
-    wait_seconds: float = 0.0
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "action": self.action,
-            "message_text": self.message_text,
-            "target_scene": self.target_scene,
-            "wait_seconds": self.wait_seconds,
-        }
-
-    @classmethod
-    def from_dict(
-        cls,
-        data: dict[str, object],
-    ) -> Area2DAction:
-        return cls(
-            action=str(
-                data.get("action", "none")
-                or "none"
-            ),
-            message_text=str(
-                data.get("message_text", "")
-                or ""
-            ),
-            target_scene=str(
-                data.get("target_scene", "")
-                or ""
-            ),
-            wait_seconds=max(
-                0.0,
-                float(
-                    data.get(
-                        "wait_seconds",
-                        0.0,
-                    )
-                    or 0.0
-                ),
-            ),
-        )
-
-
-@dataclass(slots=True)
 class Area2DComponent:
     """Área de detecção 2D sem colisão física."""
 
@@ -477,16 +429,11 @@ class Area2DComponent:
     detect_player: bool = True
     debug_visible: bool = True
 
-    on_enter_actions: list[Area2DAction] = field(
-        default_factory=list
-    )
-
-    trigger_once: bool = False
-
-    # Compatibilidade temporária com o sistema antigo.
+    # Ação executada quando o Player entra na área.
+    # Valores atuais: "none" e "change_scene".
     on_enter_action: str = "none"
     target_scene: str = ""
-    message_text: str = ""
+    trigger_once: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -500,17 +447,9 @@ class Area2DComponent:
             "detect_player": self.detect_player,
             "debug_visible": self.debug_visible,
             "on_enter": {
-                "actions": [
-                    action.to_dict()
-                    for action
-                    in self.on_enter_actions
-                ],
-                "trigger_once": self.trigger_once,
-
-                # Formato legado mantido nesta etapa.
                 "action": self.on_enter_action,
                 "target_scene": self.target_scene,
-                "message_text": self.message_text,
+                "trigger_once": self.trigger_once,
             },
         }
 
@@ -524,7 +463,10 @@ class Area2DComponent:
             {},
         )
 
-        if not isinstance(offset, dict):
+        if not isinstance(
+            offset,
+            dict,
+        ):
             offset = {}
 
         on_enter = data.get(
@@ -532,94 +474,18 @@ class Area2DComponent:
             {},
         )
 
-        if not isinstance(on_enter, dict):
+        if not isinstance(
+            on_enter,
+            dict,
+        ):
             on_enter = {}
-
-        legacy_action = str(
-            on_enter.get(
-                "action",
-                "none",
-            )
-            or "none"
-        )
-
-        legacy_target_scene = str(
-            on_enter.get(
-                "target_scene",
-                "",
-            )
-            or ""
-        )
-
-        legacy_message_text = str(
-            on_enter.get(
-                "message_text",
-                "",
-            )
-            or ""
-        )
-
-        actions_data = on_enter.get(
-            "actions",
-            [],
-        )
-
-        actions: list[Area2DAction] = []
-
-        if isinstance(actions_data, list):
-            for item in actions_data:
-                if not isinstance(item, dict):
-                    continue
-
-                action = Area2DAction.from_dict(
-                    item
-                )
-
-                if action.action != "none":
-                    actions.append(action)
-
-        # Migração automática das cenas antigas.
-        if not actions:
-            if legacy_action == "change_scene":
-                actions.append(
-                    Area2DAction(
-                        action="change_scene",
-                        target_scene=legacy_target_scene,
-                    )
-                )
-
-            elif legacy_action == "show_message":
-                actions.append(
-                    Area2DAction(
-                        action="show_message",
-                        message_text=legacy_message_text,
-                    )
-                )
-
-            elif (
-                legacy_action
-                == "message_change_scene"
-            ):
-                actions.extend(
-                    [
-                        Area2DAction(
-                            action="show_message",
-                            message_text=legacy_message_text,
-                        ),
-                        Area2DAction(
-                            action="wait",
-                            wait_seconds=3.0,
-                        ),
-                        Area2DAction(
-                            action="change_scene",
-                            target_scene=legacy_target_scene,
-                        ),
-                    ]
-                )
 
         return cls(
             enabled=bool(
-                data.get("enabled", True)
+                data.get(
+                    "enabled",
+                    True,
+                )
             ),
             width=max(
                 0.0,
@@ -640,10 +506,16 @@ class Area2DComponent:
                 ),
             ),
             offset_x=float(
-                offset.get("x", 0.0)
+                offset.get(
+                    "x",
+                    0.0,
+                )
             ),
             offset_y=float(
-                offset.get("y", 0.0)
+                offset.get(
+                    "y",
+                    0.0,
+                )
             ),
             detect_player=bool(
                 data.get(
@@ -657,16 +529,26 @@ class Area2DComponent:
                     True,
                 )
             ),
-            on_enter_actions=actions,
+            on_enter_action=str(
+                on_enter.get(
+                    "action",
+                    "none",
+                )
+                or "none"
+            ),
+            target_scene=str(
+                on_enter.get(
+                    "target_scene",
+                    "",
+                )
+                or ""
+            ),
             trigger_once=bool(
                 on_enter.get(
                     "trigger_once",
                     False,
                 )
             ),
-            on_enter_action=legacy_action,
-            target_scene=legacy_target_scene,
-            message_text=legacy_message_text,
         )
 
 

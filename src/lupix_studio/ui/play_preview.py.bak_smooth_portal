@@ -57,7 +57,6 @@ class PlayCanvas(QGraphicsView):
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
 
-
         self.follow_active_camera = True
 
         self._camera_center_x: float | None = None
@@ -1505,8 +1504,6 @@ class PlayPreview(QWidget):
 
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
-
-        self.active_area_sequences: set[str] = set()
         self.scene_serializer = SceneSerializer()
 
         self.timer = QTimer(
@@ -1600,8 +1597,6 @@ class PlayPreview(QWidget):
     ) -> None:
         self.stop_runtime()
 
-        self.active_area_sequences.clear()
-
         self.project_root = (
             project_root.resolve()
         )
@@ -1680,47 +1675,15 @@ class PlayPreview(QWidget):
                     f"{area_name}"
                 )
 
-            self.area_event.emit(
-                message
-            )
+            self.area_event.emit(message)
 
             if (
-                area_event.event != "entered"
-                or area_entity is None
-                or area_entity.area2d is None
+                area_event.event == "entered"
+                and area_entity is not None
+                and area_entity.area2d is not None
+                and area_entity.area2d.on_enter_action
+                == "show_message"
             ):
-                continue
-
-            actions = list(
-                area_entity.area2d.on_enter_actions
-            )
-
-            if actions:
-                area_id = area_entity.id
-
-                if (
-                    area_id
-                    in self.active_area_sequences
-                ):
-                    continue
-
-                self.active_area_sequences.add(
-                    area_id
-                )
-
-                self._run_area_actions(
-                    area_id,
-                    actions,
-                    0,
-                )
-                continue
-
-            # Compatibilidade com cenas antigas.
-            legacy_action = (
-                area_entity.area2d.on_enter_action
-            )
-
-            if legacy_action == "show_message":
                 message_text = (
                     area_entity.area2d.message_text.strip()
                 )
@@ -1729,30 +1692,22 @@ class PlayPreview(QWidget):
                     self.area_event.emit(
                         f"Mensagem: {message_text}"
                     )
+
                     self.canvas.show_message(
                         message_text
                     )
 
-            elif legacy_action == "change_scene":
-                target_scene = (
-                    area_entity.area2d.target_scene.strip()
-                )
-
-                if (
-                    target_scene
-                    and self._change_scene(
-                        target_scene
-                    )
-                ):
-                    return
-
-            elif (
-                legacy_action
+            if (
+                area_event.event == "entered"
+                and area_entity is not None
+                and area_entity.area2d is not None
+                and area_entity.area2d.on_enter_action
                 == "message_change_scene"
             ):
                 message_text = (
                     area_entity.area2d.message_text.strip()
                 )
+
                 target_scene = (
                     area_entity.area2d.target_scene.strip()
                 )
@@ -1761,133 +1716,43 @@ class PlayPreview(QWidget):
                     self.area_event.emit(
                         f"Mensagem: {message_text}"
                     )
+
                     self.canvas.show_message(
                         message_text,
                         duration_ms=3000,
                     )
 
                 if target_scene:
+                    if self.runtime is not None:
+                        self.runtime.running = False
+
                     QTimer.singleShot(
                         3000,
                         lambda scene=target_scene: (
-                            self._change_scene(
-                                scene
-                            )
+                            self._change_scene(scene)
                         ),
                     )
+
+                    return
+
+            if (
+                area_event.event == "entered"
+                and area_entity is not None
+                and area_entity.area2d is not None
+                and area_entity.area2d.on_enter_action
+                == "change_scene"
+            ):
+                target_scene = (
+                    area_entity.area2d.target_scene.strip()
+                )
+
+                if (
+                    target_scene
+                    and self._change_scene(target_scene)
+                ):
                     return
 
         self.canvas.refresh()
-
-    def _finish_area_sequence(
-        self,
-        area_id: str,
-    ) -> None:
-        self.active_area_sequences.discard(
-            area_id
-        )
-
-    def _run_area_actions(
-        self,
-        area_id: str,
-        actions: list[object],
-        index: int = 0,
-    ) -> None:
-        if index >= len(actions):
-            self._finish_area_sequence(
-                area_id
-            )
-            return
-
-        action = actions[index]
-
-        action_type = str(
-            getattr(
-                action,
-                "action",
-                "none",
-            )
-            or "none"
-        )
-
-        if action_type == "show_message":
-            message_text = str(
-                getattr(
-                    action,
-                    "message_text",
-                    "",
-                )
-                or ""
-            ).strip()
-
-            if message_text:
-                self.area_event.emit(
-                    f"Mensagem: {message_text}"
-                )
-
-                self.canvas.show_message(
-                    message_text
-                )
-
-            self._run_area_actions(
-                area_id,
-                actions,
-                index + 1,
-            )
-            return
-
-        if action_type == "wait":
-            wait_seconds = max(
-                0.0,
-                float(
-                    getattr(
-                        action,
-                        "wait_seconds",
-                        0.0,
-                    )
-                    or 0.0
-                ),
-            )
-
-            QTimer.singleShot(
-                int(
-                    wait_seconds
-                    * 1000
-                ),
-                lambda: self._run_area_actions(
-                    area_id,
-                    actions,
-                    index + 1,
-                ),
-            )
-            return
-
-        if action_type == "change_scene":
-            target_scene = str(
-                getattr(
-                    action,
-                    "target_scene",
-                    "",
-                )
-                or ""
-            ).strip()
-
-            self._finish_area_sequence(
-                area_id
-            )
-
-            if target_scene:
-                self._change_scene(
-                    target_scene
-                )
-
-            return
-
-        self._run_area_actions(
-            area_id,
-            actions,
-            index + 1,
-        )
 
     def _change_scene(
         self,
