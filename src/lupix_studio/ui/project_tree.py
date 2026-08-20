@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -22,7 +23,7 @@ class ProjectTree(QTreeWidget):
         ("scripts", "Scripts"),
     )
 
-    HIDDEN_NAMES = {
+    HIDDEN_NAMES: ClassVar[set[str]] = {
         "lupix",
         "lupix.project",
         "README.md",

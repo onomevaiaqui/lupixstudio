@@ -386,18 +386,37 @@ class PlayCanvas(QGraphicsView):
 
         self.follow_active_camera = False
 
-        world_left = self.runtime.world_left
-        world_top = self.runtime.world_top
-        world_right = self.runtime.world_right
-        world_bottom = self.runtime.world_bottom
+        world_left = float(
+            self.runtime.world_left
+        )
+
+        world_top = float(
+            self.runtime.world_top
+        )
+
+        world_right = float(
+            self.runtime.world_right
+        )
+
+        world_bottom = float(
+            self.runtime.world_bottom
+        )
+
+        world_rect = QRectF(
+            world_left,
+            world_top,
+            max(
+                1.0,
+                world_right - world_left,
+            ),
+            max(
+                1.0,
+                world_bottom - world_top,
+            ),
+        )
 
         self.fitInView(
-            QRectF(
-                world_left,
-                world_top,
-                max(1.0, world_right - world_left),
-                max(1.0, world_bottom - world_top),
-            ),
+            world_rect,
             Qt.AspectRatioMode.KeepAspectRatio,
         )
 
@@ -408,54 +427,422 @@ class PlayCanvas(QGraphicsView):
         scene = self.runtime.scene
         camera_entity = scene.active_camera()
 
-        if camera_entity is None or camera_entity.camera is None:
-            self.fit_scene()
+        if (
+            camera_entity is None
+            or camera_entity.camera is None
+        ):
+            world_rect = QRectF(
+                float(
+                    self.runtime.world_left
+                ),
+                float(
+                    self.runtime.world_top
+                ),
+                max(
+                    1.0,
+                    float(
+                        self.runtime.world_right
+                        - self.runtime.world_left
+                    ),
+                ),
+                max(
+                    1.0,
+                    float(
+                        self.runtime.world_bottom
+                        - self.runtime.world_top
+                    ),
+                ),
+            )
+
+            self.fitInView(
+                world_rect,
+                Qt.AspectRatioMode.KeepAspectRatio,
+            )
             return
 
         camera = camera_entity.camera
-        zoom = max(0.01, float(camera.zoom))
-        visible_width = max(1.0, float(camera.width) / zoom)
-        visible_height = max(1.0, float(camera.height) / zoom)
 
-        player = self.runtime.player
-        if player is not None:
-            target_x = player.transform.x
-            target_y = player.transform.y
-        else:
-            target_x = camera_entity.transform.x
-            target_y = camera_entity.transform.y
+        width = max(
+            1.0,
+            float(camera.width),
+        )
 
-        world_left = self.runtime.world_left
-        world_top = self.runtime.world_top
-        world_right = self.runtime.world_right
-        world_bottom = self.runtime.world_bottom
+        height = max(
+            1.0,
+            float(camera.height),
+        )
 
-        world_width = max(1.0, world_right - world_left)
-        world_height = max(1.0, world_bottom - world_top)
+        zoom = max(
+            0.01,
+            float(camera.zoom),
+        )
 
-        if visible_width < world_width:
-            half_width = visible_width / 2.0
-            center_x = max(
-                world_left + half_width,
-                min(world_right - half_width, target_x),
+        visible_width = (
+            width / zoom
+        )
+
+        visible_height = (
+            height / zoom
+        )
+
+        target_x = (
+            float(camera_entity.transform.x)
+            + float(camera.offset_x)
+        )
+
+        target_y = (
+            float(camera_entity.transform.y)
+            + float(camera.offset_y)
+        )
+
+        if self._camera_center_x is None:
+            self._camera_center_x = (
+                target_x
             )
-        else:
-            center_x = (world_left + world_right) / 2.0
-            visible_width = world_width
 
-        if visible_height < world_height:
-            half_height = visible_height / 2.0
-            center_y = max(
-                world_top + half_height,
-                min(world_bottom - half_height, target_y),
+        if self._camera_center_y is None:
+            self._camera_center_y = (
+                target_y
             )
+
+        desired_x = target_x
+        desired_y = target_y
+
+        #
+        # DEAD ZONE
+        #
+        # A câmera só começa a se deslocar quando o alvo
+        # ultrapassa a área interna permitida.
+        #
+        if camera.dead_zone_enabled:
+            half_dead_width = max(
+                0.0,
+                float(camera.dead_zone_width)
+                / 2.0,
+            )
+
+            half_dead_height = max(
+                0.0,
+                float(camera.dead_zone_height)
+                / 2.0,
+            )
+
+            current_x = float(
+                self._camera_center_x
+            )
+
+            current_y = float(
+                self._camera_center_y
+            )
+
+            left_edge = (
+                current_x
+                - half_dead_width
+            )
+
+            right_edge = (
+                current_x
+                + half_dead_width
+            )
+
+            top_edge = (
+                current_y
+                - half_dead_height
+            )
+
+            bottom_edge = (
+                current_y
+                + half_dead_height
+            )
+
+            if target_x < left_edge:
+                desired_x = (
+                    target_x
+                    + half_dead_width
+                )
+
+            elif target_x > right_edge:
+                desired_x = (
+                    target_x
+                    - half_dead_width
+                )
+
+            else:
+                desired_x = current_x
+
+            if target_y < top_edge:
+                desired_y = (
+                    target_y
+                    + half_dead_height
+                )
+
+            elif target_y > bottom_edge:
+                desired_y = (
+                    target_y
+                    - half_dead_height
+                )
+
+            else:
+                desired_y = current_y
+
+        #
+        # LIMITES
+        #
+        if camera.limit_to_scene:
+            if (
+                camera.custom_limits_enabled
+                and camera.limit_right
+                > camera.limit_left
+                and camera.limit_bottom
+                > camera.limit_top
+            ):
+                world_left = float(
+                    camera.limit_left
+                )
+
+                world_top = float(
+                    camera.limit_top
+                )
+
+                world_right = float(
+                    camera.limit_right
+                )
+
+                world_bottom = float(
+                    camera.limit_bottom
+                )
+
+            else:
+                world_left = float(
+                    self.runtime.world_left
+                )
+
+                world_top = float(
+                    self.runtime.world_top
+                )
+
+                world_right = float(
+                    self.runtime.world_right
+                )
+
+                world_bottom = float(
+                    self.runtime.world_bottom
+                )
+
+            half_width = (
+                visible_width / 2.0
+            )
+
+            half_height = (
+                visible_height / 2.0
+            )
+
+            world_width = (
+                world_right
+                - world_left
+            )
+
+            world_height = (
+                world_bottom
+                - world_top
+            )
+
+            if visible_width <= world_width:
+                desired_x = max(
+                    world_left
+                    + half_width,
+                    min(
+                        world_right
+                        - half_width,
+                        desired_x,
+                    ),
+                )
+
+            else:
+                desired_x = (
+                    world_left
+                    + world_right
+                ) / 2.0
+
+            if visible_height <= world_height:
+                desired_y = max(
+                    world_top
+                    + half_height,
+                    min(
+                        world_bottom
+                        - half_height,
+                        desired_y,
+                    ),
+                )
+
+            else:
+                desired_y = (
+                    world_top
+                    + world_bottom
+                ) / 2.0
+
+        #
+        # SUAVIZAÇÃO
+        #
+        now = monotonic()
+
+        delta = max(
+            0.0,
+            min(
+                0.1,
+                now
+                - self._camera_last_time,
+            ),
+        )
+
+        self._camera_last_time = now
+
+        if camera.smoothing_enabled:
+            speed = max(
+                0.01,
+                float(
+                    camera.smoothing_speed
+                ),
+            )
+
+            interpolation = min(
+                1.0,
+                speed * delta,
+            )
+
+            self._camera_center_x = (
+                float(
+                    self._camera_center_x
+                )
+                + (
+                    desired_x
+                    - float(
+                        self._camera_center_x
+                    )
+                )
+                * interpolation
+            )
+
+            self._camera_center_y = (
+                float(
+                    self._camera_center_y
+                )
+                + (
+                    desired_y
+                    - float(
+                        self._camera_center_y
+                    )
+                )
+                * interpolation
+            )
+
         else:
-            center_y = (world_top + world_bottom) / 2.0
-            visible_height = world_height
+            self._camera_center_x = (
+                desired_x
+            )
+
+            self._camera_center_y = (
+                desired_y
+            )
+
+        center_x = float(
+            self._camera_center_x
+        )
+
+        center_y = float(
+            self._camera_center_y
+        )
+
+        #
+        # Clamp final após a suavização para a câmera nunca
+        # atravessar os limites configurados.
+        #
+        if camera.limit_to_scene:
+            half_width = (
+                visible_width / 2.0
+            )
+
+            half_height = (
+                visible_height / 2.0
+            )
+
+            if (
+                camera.custom_limits_enabled
+                and camera.limit_right
+                > camera.limit_left
+                and camera.limit_bottom
+                > camera.limit_top
+            ):
+                limit_left = float(
+                    camera.limit_left
+                )
+
+                limit_top = float(
+                    camera.limit_top
+                )
+
+                limit_right = float(
+                    camera.limit_right
+                )
+
+                limit_bottom = float(
+                    camera.limit_bottom
+                )
+
+            else:
+                limit_left = float(
+                    self.runtime.world_left
+                )
+
+                limit_top = float(
+                    self.runtime.world_top
+                )
+
+                limit_right = float(
+                    self.runtime.world_right
+                )
+
+                limit_bottom = float(
+                    self.runtime.world_bottom
+                )
+
+            if (
+                visible_width
+                <= limit_right - limit_left
+            ):
+                center_x = max(
+                    limit_left + half_width,
+                    min(
+                        limit_right - half_width,
+                        center_x,
+                    ),
+                )
+
+            if (
+                visible_height
+                <= limit_bottom - limit_top
+            ):
+                center_y = max(
+                    limit_top + half_height,
+                    min(
+                        limit_bottom - half_height,
+                        center_y,
+                    ),
+                )
+
+            self._camera_center_x = (
+                center_x
+            )
+
+            self._camera_center_y = (
+                center_y
+            )
 
         camera_rect = QRectF(
-            center_x - visible_width / 2.0,
-            center_y - visible_height / 2.0,
+            center_x
+            - visible_width / 2.0,
+            center_y
+            - visible_height / 2.0,
             visible_width,
             visible_height,
         )
@@ -464,7 +851,11 @@ class PlayCanvas(QGraphicsView):
             camera_rect,
             Qt.AspectRatioMode.KeepAspectRatio,
         )
-        self.centerOn(center_x, center_y)
+
+        self.centerOn(
+            center_x,
+            center_y,
+        )
 
     def use_active_camera(self) -> None:
         self.follow_active_camera = True
@@ -882,21 +1273,15 @@ class PlayCanvas(QGraphicsView):
         transform = item.transform()
 
         scale_x = (
-            entity.transform.scale_x
-            * (
-                -1.0
-                if entity.sprite.flip_x
-                else 1.0
-            )
+            -1.0
+            if entity.sprite.flip_x
+            else 1.0
         )
 
         scale_y = (
-            entity.transform.scale_y
-            * (
-                -1.0
-                if entity.sprite.flip_y
-                else 1.0
-            )
+            -1.0
+            if entity.sprite.flip_y
+            else 1.0
         )
 
         transform.setMatrix(
@@ -1501,63 +1886,6 @@ class PlayPreview(QWidget):
                     f"({player.transform.x:.1f}, "
                     f"{player.transform.y:.1f})"
                 )
-                self.canvas.refresh()
-
-            self._run_area_actions(
-                area_id,
-                actions,
-                index + 1,
-            )
-            return
-
-        if action_type == "set_collider":
-            if self.runtime is None:
-                self._finish_area_sequence(
-                    area_id
-                )
-                return
-
-            target_entity_id = str(
-                getattr(
-                    action,
-                    "target_entity_id",
-                    "",
-                )
-                or ""
-            )
-
-            target_entity = (
-                self.runtime.scene.entity(
-                    target_entity_id
-                )
-            )
-
-            if (
-                target_entity is not None
-                and target_entity.collider is not None
-            ):
-                enabled = bool(
-                    getattr(
-                        action,
-                        "collider_enabled",
-                        True,
-                    )
-                )
-
-                target_entity.collider.enabled = enabled
-                self.runtime.refresh_collisions()
-
-                state_text = (
-                    "ativado"
-                    if enabled
-                    else "desativado"
-                )
-
-                self.area_event.emit(
-                    f"Collider {state_text}: "
-                    f"{target_entity.name}"
-                )
-
                 self.canvas.refresh()
 
             self._run_area_actions(

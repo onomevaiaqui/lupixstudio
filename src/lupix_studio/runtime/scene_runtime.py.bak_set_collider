@@ -126,7 +126,7 @@ class SceneRuntime:
         )
 
         self._load_world_bounds()
-        self.refresh_collisions()
+        self._load_tilemap_collisions()
 
         self.running = False
 
@@ -1231,51 +1231,6 @@ class SceneRuntime:
                         ),
                     )
                 )
-
-    def refresh_collisions(self) -> None:
-        self._load_tilemap_collisions()
-
-        player = self.player
-
-        for entity in self.scene.entities:
-            if (
-                player is not None
-                and entity.id == player.id
-            ):
-                continue
-
-            collider = entity.collider
-
-            if (
-                collider is None
-                or not collider.enabled
-                or not collider.solid
-            ):
-                continue
-
-            center_x = (
-                entity.transform.x
-                + collider.offset_x
-            )
-            center_y = (
-                entity.transform.y
-                + collider.offset_y
-            )
-
-            self.collision_rects.append(
-                CollisionRect(
-                    x=(
-                        center_x
-                        - collider.width / 2.0
-                    ),
-                    y=(
-                        center_y
-                        - collider.height / 2.0
-                    ),
-                    width=collider.width,
-                    height=collider.height,
-                )
-            )
 
     def _apply_scene_horizontal_bounds(
         self,

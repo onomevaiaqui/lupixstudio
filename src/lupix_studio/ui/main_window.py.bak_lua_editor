@@ -55,7 +55,6 @@ from lupix_studio.ui.entity_inspector import EntityInspector
 from lupix_studio.ui.entity_inspector_panel import (
     EntityInspectorPanel,
 )
-from lupix_studio.ui.lua_editor import LuaEditor
 from lupix_studio.ui.new_project_dialog import (
     NewProjectDialog,
 )
@@ -351,19 +350,6 @@ class MainWindow(QMainWindow):
 
     def _create_workspace(self) -> None:
         self.workspace = WorkspaceWidget()
-
-        self.lua_editor = LuaEditor()
-        self.workspace.stack.addWidget(
-            self.lua_editor
-        )
-
-        self.lua_editor.back_requested.connect(
-            self._on_lua_editor_back
-        )
-
-        self.lua_editor.saved.connect(
-            self._on_lua_editor_saved
-        )
 
         self.workspace.start_page.new_project_requested.connect(
             self._on_new_project
@@ -1339,77 +1325,10 @@ class MainWindow(QMainWindow):
         if not path.is_file():
             return
 
-        suffix = path.suffix.lower()
-
-        if suffix == ".scene":
+        if path.suffix.lower() == ".scene":
             self._open_scene_file(
                 path
             )
-            return
-
-        if suffix == ".lua":
-            self._open_lua_file(
-                path
-            )
-
-    def _open_lua_file(
-        self,
-        path: Path,
-    ) -> None:
-        if self.playing:
-            return
-
-        if not self.lua_editor.open_file(path):
-            return
-
-        self.workspace.stack.setCurrentWidget(
-            self.lua_editor
-        )
-
-        self.statusBar().showMessage(
-            f"Script aberto: {path.name}"
-        )
-
-        self.console.append(
-            f"Script Lua aberto: {path}"
-        )
-
-        self.setWindowTitle(
-            f"{path.name} - Lupix Studio"
-        )
-
-    def _on_lua_editor_saved(
-        self,
-        path: Path,
-    ) -> None:
-        self.statusBar().showMessage(
-            f"Script salvo: {path.name}"
-        )
-
-        self.console.append(
-            f"Script Lua salvo: {path}"
-        )
-
-    def _on_lua_editor_back(self) -> None:
-        if (
-            self.current_scene is not None
-            and self.current_project is not None
-        ):
-            self.workspace.show_scene(
-                self.current_project.root,
-                self.current_scene,
-            )
-
-            self._show_scene_hierarchy()
-
-            self.setWindowTitle(
-                f"{self.current_scene.name} - "
-                f"{self.current_project.name} - "
-                "Lupix Studio"
-            )
-            return
-
-        self._show_project_view()
 
     def _show_project_view(self) -> None:
         if (
@@ -1621,8 +1540,9 @@ class MainWindow(QMainWindow):
         if self.playing:
             return
 
-        self.workspace.scene_viewport.select_entity(
-            entity_id
+        self.workspace.scene_viewport.select_component(
+            entity_id,
+            component,
         )
 
         self._show_entity_in_inspector(
@@ -1915,8 +1835,20 @@ class MainWindow(QMainWindow):
 
         self.scene_tree.refresh()
 
-        # Não reconstruir o Inspector/Area2D durante este signal.
-        # O editor já alterou o modelo antes de emitir area2d_changed.
+        self.entity_inspector.show_entity(
+            entity
+        )
+
+        self.area2d_editor.set_context(
+            self.current_scene,
+            entity,
+            (
+                self.current_project.root
+                if self.current_project is not None
+                else None
+            ),
+        )
+
         self._save_current_scene()
 
     def _on_player_changed(

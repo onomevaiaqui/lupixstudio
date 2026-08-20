@@ -391,10 +391,6 @@ class Area2DComponentEditor(QWidget):
             "teleport_player",
         )
         action_combo.addItem(
-            "Alterar Collider",
-            "set_collider",
-        )
-        action_combo.addItem(
             "Trocar cena",
             "change_scene",
         )
@@ -526,49 +522,6 @@ class Area2DComponentEditor(QWidget):
             action.player_y
         )
 
-        collider_entity_combo = QComboBox()
-        collider_entity_combo.setMinimumWidth(180)
-        collider_entity_combo.addItem(
-            "Selecione uma entidade...",
-            "",
-        )
-
-        if self.scene is not None:
-            selected_entity_index = 0
-            for scene_entity in self.scene.entities:
-                if scene_entity.collider is None:
-                    continue
-
-                collider_entity_combo.addItem(
-                    scene_entity.name,
-                    scene_entity.id,
-                )
-
-                if (
-                    scene_entity.id
-                    == action.target_entity_id
-                ):
-                    selected_entity_index = (
-                        collider_entity_combo.count() - 1
-                    )
-
-            collider_entity_combo.setCurrentIndex(
-                selected_entity_index
-            )
-
-        collider_state_combo = QComboBox()
-        collider_state_combo.addItem(
-            "Ativar",
-            True,
-        )
-        collider_state_combo.addItem(
-            "Desativar",
-            False,
-        )
-        collider_state_combo.setCurrentIndex(
-            0 if action.collider_enabled else 1
-        )
-
         scene_combo = QComboBox()
         scene_combo.setMinimumWidth(180)
         self._populate_scene_combo(
@@ -591,14 +544,6 @@ class Area2DComponentEditor(QWidget):
         details_layout.addRow(
             "Posição Y:",
             player_y_spin,
-        )
-        details_layout.addRow(
-            "Entidade:",
-            collider_entity_combo,
-        )
-        details_layout.addRow(
-            "Collider:",
-            collider_state_combo,
         )
         details_layout.addRow(
             "Cena destino:",
@@ -647,24 +592,6 @@ class Area2DComponentEditor(QWidget):
                 player_y_spin
             ).setVisible(
                 kind == "teleport_player"
-            )
-
-            collider_entity_combo.setVisible(
-                kind == "set_collider"
-            )
-            details_layout.labelForField(
-                collider_entity_combo
-            ).setVisible(
-                kind == "set_collider"
-            )
-
-            collider_state_combo.setVisible(
-                kind == "set_collider"
-            )
-            details_layout.labelForField(
-                collider_state_combo
-            ).setVisible(
-                kind == "set_collider"
             )
 
             scene_combo.setVisible(
@@ -717,13 +644,6 @@ class Area2DComponentEditor(QWidget):
             current.player_y = (
                 player_y_spin.value()
             )
-            current.target_entity_id = str(
-                collider_entity_combo.currentData()
-                or ""
-            )
-            current.collider_enabled = bool(
-                collider_state_combo.currentData()
-            )
 
             update_details()
             self._sync_legacy_fields()
@@ -744,12 +664,6 @@ class Area2DComponentEditor(QWidget):
             save_row
         )
         player_y_spin.valueChanged.connect(
-            save_row
-        )
-        collider_entity_combo.currentIndexChanged.connect(
-            save_row
-        )
-        collider_state_combo.currentIndexChanged.connect(
             save_row
         )
         scene_combo.currentIndexChanged.connect(

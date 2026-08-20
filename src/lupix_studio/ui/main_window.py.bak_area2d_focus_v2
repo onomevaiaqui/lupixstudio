@@ -1915,8 +1915,20 @@ class MainWindow(QMainWindow):
 
         self.scene_tree.refresh()
 
-        # Não reconstruir o Inspector/Area2D durante este signal.
-        # O editor já alterou o modelo antes de emitir area2d_changed.
+        self.entity_inspector.show_entity(
+            entity
+        )
+
+        self.area2d_editor.set_context(
+            self.current_scene,
+            entity,
+            (
+                self.current_project.root
+                if self.current_project is not None
+                else None
+            ),
+        )
+
         self._save_current_scene()
 
     def _on_player_changed(

@@ -425,10 +425,6 @@ class Area2DAction:
     message_text: str = ""
     target_scene: str = ""
     wait_seconds: float = 0.0
-    player_x: float = 0.0
-    player_y: float = 0.0
-    target_entity_id: str = ""
-    collider_enabled: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -436,10 +432,6 @@ class Area2DAction:
             "message_text": self.message_text,
             "target_scene": self.target_scene,
             "wait_seconds": self.wait_seconds,
-            "player_x": self.player_x,
-            "player_y": self.player_y,
-            "target_entity_id": self.target_entity_id,
-            "collider_enabled": self.collider_enabled,
         }
 
     @classmethod
@@ -469,33 +461,6 @@ class Area2DAction:
                     )
                     or 0.0
                 ),
-            ),
-            player_x=float(
-                data.get(
-                    "player_x",
-                    0.0,
-                )
-                or 0.0
-            ),
-            player_y=float(
-                data.get(
-                    "player_y",
-                    0.0,
-                )
-                or 0.0
-            ),
-            target_entity_id=str(
-                data.get(
-                    "target_entity_id",
-                    "",
-                )
-                or ""
-            ),
-            collider_enabled=bool(
-                data.get(
-                    "collider_enabled",
-                    True,
-                )
             ),
         )
 
