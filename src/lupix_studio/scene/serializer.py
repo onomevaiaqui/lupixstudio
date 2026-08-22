@@ -59,9 +59,11 @@ class SceneSerializer:
                 "Estrutura Scene inválida."
             )
 
-        if data.get("type") != "scene":
+        scene_type = str(data.get("type", "scene") or "scene")
+
+        if scene_type not in {"scene", "interface"}:
             raise ValueError(
-                "O arquivo não é uma Scene válida."
+                f"Tipo de Scene desconhecido: {scene_type}."
             )
 
         return SceneResource.from_dict(

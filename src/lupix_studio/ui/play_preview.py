@@ -10,16 +10,21 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
+    QBrush,
     QColor,
+    QFont,
+    QFontDatabase,
     QKeyEvent,
     QPainter,
     QPen,
     QPixmap,
 )
 from PySide6.QtWidgets import (
+    QGraphicsItemGroup,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsTextItem,
     QGraphicsView,
     QHBoxLayout,
     QLabel,
@@ -30,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from lupix_studio.assets.registry import AssetRegistry
 from lupix_studio.runtime import SceneRuntime
+from lupix_studio.runtime.flowchart_runtime import FlowchartRuntime
 from lupix_studio.scene.model import (
     SceneEntity,
     SceneResource,
@@ -38,10 +44,16 @@ from lupix_studio.scene.serializer import SceneSerializer
 from lupix_studio.tilemap.serializer import (
     TileMapSerializer,
 )
+from lupix_studio.ui_theme import UITheme
 
 
 class PlayCanvas(QGraphicsView):
     """Canvas de execução da cena."""
+
+    continue_requested = Signal()
+    end_requested = Signal()
+    ui_action_requested = Signal(str, str)
+    flow_key_pressed = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -56,7 +68,12 @@ class PlayCanvas(QGraphicsView):
 
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
-
+        self.ui_theme = UITheme()
+        self._theme_font_family = ""
+        self._pressed_ui_item = None
+        self._pressed_ui_entity_id: str | None = None
+        self._hovered_ui_item = None
+        self.setMouseTracking(True)
 
         self.follow_active_camera = True
 
@@ -81,6 +98,20 @@ class PlayCanvas(QGraphicsView):
         self.setFocusPolicy(
             Qt.FocusPolicy.StrongFocus
         )
+
+        self.health_label = QLabel(self.viewport())
+        self.health_label.setObjectName("PlayerHealthHUD")
+        self.health_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.health_label.setStyleSheet(
+            "QLabel#PlayerHealthHUD { color: #ffffff;"
+            " background-color: rgba(8, 14, 26, 210);"
+            " border: 1px solid #d5ad38; border-radius: 6px;"
+            " padding: 7px 11px; font-size: 14px;"
+            " font-weight: 700; }"
+        )
+        self.health_label.hide()
 
         self.dialogue_label = QLabel(
             self.viewport()
@@ -129,6 +160,196 @@ class PlayCanvas(QGraphicsView):
         self.dialogue_timer.timeout.connect(
             self.hide_message
         )
+
+        self.death_overlay = QLabel(self.viewport())
+        self.death_overlay.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        self.death_overlay.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.death_overlay.hide()
+        self.death_transition_timer = QTimer(self)
+        self.death_transition_timer.setInterval(16)
+        self.death_transition_timer.timeout.connect(
+            self._update_death_transition
+        )
+        self._death_started_at = 0.0
+        self._death_respawn_delay = 1.0
+        self._death_fade_duration = 0.35
+        self._death_requires_confirmation = False
+        self._death_exiting = False
+        self.continue_button = QPushButton("Sim", self.viewport())
+        self.end_button = QPushButton("Não", self.viewport())
+        for button in (self.continue_button, self.end_button):
+            button.setFixedSize(110, 38)
+            button.setStyleSheet(
+                "QPushButton { color: white; background: #252a34;"
+                " border: 1px solid #8f98a8; border-radius: 6px;"
+                " font-size: 15px; font-weight: 600; }"
+                "QPushButton:hover, QPushButton:focus {"
+                " background: #d5ad38; color: #111216; }"
+            )
+            button.hide()
+        self.continue_button.clicked.connect(self.continue_requested.emit)
+        self.end_button.clicked.connect(self.end_requested.emit)
+
+    def start_death_transition(
+        self, text: str, respawn_delay: float, fade_duration: float,
+        require_confirmation: bool = False,
+    ) -> None:
+        self.death_transition_timer.stop()
+        self._death_started_at = monotonic()
+        self._death_respawn_delay = max(0.0, float(respawn_delay))
+        self._death_fade_duration = max(0.05, float(fade_duration))
+        self._death_requires_confirmation = bool(require_confirmation)
+        self._death_exiting = False
+        self.continue_button.hide()
+        self.end_button.hide()
+        prompt = (
+            f"{text}\n\n{self.ui_theme.continue_prompt}"
+            if require_confirmation else text
+        )
+        self.death_overlay.setText(prompt)
+        self.death_overlay.setGeometry(self.viewport().rect())
+        self.death_overlay.show()
+        self.death_overlay.raise_()
+        self.death_transition_timer.start()
+        self._update_death_transition()
+
+    def stop_death_transition(self) -> None:
+        self.death_transition_timer.stop()
+        self.death_overlay.hide()
+        self.continue_button.hide()
+        self.end_button.hide()
+        self._death_exiting = False
+
+    def complete_death_transition(self) -> None:
+        self.continue_button.hide()
+        self.end_button.hide()
+        self._death_exiting = True
+        self._death_started_at = monotonic()
+        self.death_transition_timer.start()
+
+    def _position_death_buttons(self) -> None:
+        center_x = self.viewport().width() // 2
+        y = self.viewport().height() // 2 + 55
+        self.continue_button.move(center_x - 120, y)
+        self.end_button.move(center_x + 10, y)
+
+    def _update_death_transition(self) -> None:
+        elapsed = monotonic() - self._death_started_at
+        fade = self._death_fade_duration
+        if self._death_exiting:
+            alpha = int(235 * max(0.0, 1.0 - elapsed / fade))
+            if elapsed >= fade:
+                self.stop_death_transition()
+                return
+            self.death_overlay.setStyleSheet(
+                "QLabel { background-color: rgba(0, 0, 0, "
+                f"{alpha}); color: rgba(255, 255, 255, {alpha});"
+                " font-size: 28px; font-weight: 700; }"
+            )
+            return
+        flash_duration = 0.12
+        fade_out_start = max(
+            flash_duration + fade, self._death_respawn_delay
+        )
+        if elapsed < flash_duration:
+            alpha = int(115 * (1.0 - elapsed / flash_duration))
+            background = f"rgba(170, 20, 30, {alpha})"
+            color = "rgba(255, 255, 255, 0)"
+        elif elapsed < flash_duration + fade:
+            progress = (elapsed - flash_duration) / fade
+            alpha = int(235 * min(1.0, progress))
+            background = f"rgba(0, 0, 0, {alpha})"
+            color = f"rgba(255, 255, 255, {alpha})"
+        elif self._death_requires_confirmation:
+            background = "rgba(0, 0, 0, 235)"
+            color = "rgba(255, 255, 255, 255)"
+            if elapsed >= self._death_respawn_delay:
+                self._position_death_buttons()
+                self.continue_button.show()
+                self.end_button.show()
+                self.continue_button.raise_()
+                self.end_button.raise_()
+                self.continue_button.setFocus()
+        elif elapsed < fade_out_start:
+            background = "rgba(0, 0, 0, 235)"
+            color = "rgba(255, 255, 255, 255)"
+        elif elapsed < fade_out_start + fade:
+            progress = (elapsed - fade_out_start) / fade
+            alpha = int(235 * max(0.0, 1.0 - progress))
+            background = f"rgba(0, 0, 0, {alpha})"
+            color = f"rgba(255, 255, 255, {alpha})"
+        else:
+            self.stop_death_transition()
+            return
+        self.death_overlay.setStyleSheet(
+            "QLabel {"
+            f" background-color: {background}; color: {color};"
+            + self._death_image_css()
+            + f" font-size: {self.ui_theme.death_font_size}px; font-weight: 700;"
+            " letter-spacing: 1px; }"
+        )
+
+    def apply_ui_theme(self, theme: UITheme) -> None:
+        self.ui_theme = theme
+        self._theme_font_family = ""
+        font_path = theme.asset(theme.font)
+        if font_path:
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if families:
+                self._theme_font_family = families[0]
+        family = (
+            f"font-family: '{self._theme_font_family}';"
+            if self._theme_font_family else ""
+        )
+        hud_image = theme.asset(theme.hud_background_image)
+        hud_asset = f"border-image: url('{hud_image}') 8 8 8 8 stretch stretch;" if hud_image else ""
+        self.health_label.setStyleSheet(
+            "QLabel#PlayerHealthHUD {" + family
+            + f"color: {theme.hud_text_color}; background-color: {theme.hud_background_color};"
+            + f"font-size: {theme.hud_font_size}px; font-weight: 700;"
+            + f"border: 1px solid {theme.accent_color}; border-radius: 6px; padding: 7px 11px;"
+            + hud_asset + "}"
+        )
+        normal_image = theme.asset(theme.button_background_image)
+        selected_image = theme.asset(theme.button_selected_image)
+        normal_asset = f"border-image: url('{normal_image}') 8 8 8 8 stretch stretch;" if normal_image else ""
+        selected_asset = f"border-image: url('{selected_image}') 8 8 8 8 stretch stretch;" if selected_image else ""
+        button_style = (
+            "QPushButton {" + family
+            + f"color: {theme.button_text_color}; background: {theme.button_background_color};"
+            + f"font-size: {theme.button_font_size}px; font-weight: 600; border: 1px solid #8f98a8; border-radius: 6px;"
+            + normal_asset + "}"
+            + "QPushButton:hover, QPushButton:focus {"
+            + f"background: {theme.button_selected_color};" + selected_asset + "}"
+        )
+        self.continue_button.setText(theme.yes_text)
+        self.end_button.setText(theme.no_text)
+        self.continue_button.setStyleSheet(button_style)
+        self.end_button.setStyleSheet(button_style)
+
+    def _death_image_css(self) -> str:
+        image = self.ui_theme.asset(self.ui_theme.death_background_image)
+        return f"background-image: url('{image}'); background-position: center;" if image else ""
+
+    def update_health_hud(
+        self, health: int, maximum: int, visible: bool
+    ) -> None:
+        if not visible or maximum <= 0:
+            self.health_label.hide()
+            return
+        health = max(0, min(int(health), int(maximum)))
+        self.health_label.setText(
+            f"{self.ui_theme.hud_label}  {health} / {maximum}"
+        )
+        self.health_label.adjustSize()
+        self.health_label.move(18, 18)
+        self.health_label.show()
+        self.health_label.raise_()
 
     def show_message(
         self,
@@ -222,6 +443,11 @@ class PlayCanvas(QGraphicsView):
 
         if self.dialogue_label.isVisible():
             self._position_dialogue()
+        if self.death_overlay.isVisible():
+            self.death_overlay.setGeometry(self.viewport().rect())
+            self._position_death_buttons()
+        if self._is_interface_scene():
+            self._fit_interface_scene()
 
     def set_runtime(
         self,
@@ -229,11 +455,14 @@ class PlayCanvas(QGraphicsView):
         runtime: SceneRuntime,
     ) -> None:
         self.hide_message()
+        self.health_label.hide()
+        self.stop_death_transition()
 
         self.project_root = (
             project_root.resolve()
         )
 
+        self.apply_ui_theme(UITheme.load(self.project_root))
         self.runtime = runtime
 
         self.rebuild()
@@ -262,21 +491,16 @@ class PlayCanvas(QGraphicsView):
         # A câmera continua enxergando somente 480 x 270,
         # mas pode se deslocar por todo o world_rect.
         #
-        world_left = float(
-            self.runtime.world_left
-        )
-
-        world_top = float(
-            self.runtime.world_top
-        )
-
-        world_right = float(
-            self.runtime.world_right
-        )
-
-        world_bottom = float(
-            self.runtime.world_bottom
-        )
+        if str(scene.type).strip().lower() == "interface":
+            world_left = 0.0
+            world_top = 0.0
+            world_right = float(scene.width)
+            world_bottom = float(scene.height)
+        else:
+            world_left = float(self.runtime.world_left)
+            world_top = float(self.runtime.world_top)
+            world_right = float(self.runtime.world_right)
+            world_bottom = float(self.runtime.world_bottom)
 
         world_width = max(
             1.0,
@@ -380,11 +604,46 @@ class PlayCanvas(QGraphicsView):
         if self.follow_active_camera:
             self.fit_camera()
 
+    def _is_interface_scene(self) -> bool:
+        if self.runtime is None:
+            return False
+        scene = self.runtime.scene
+        declared_type = str(scene.type).strip().lower()
+        if declared_type in {"interface", "ui", "menu"}:
+            return True
+
+        # Cenas criadas pelo fluxo comum também podem ser telas de UI.
+        # Se possuem Elemento UI e não possuem componentes de mundo,
+        # devem usar a resolução fixa da cena no Preview.
+        has_ui_elements = any(
+            entity.ui_element is not None for entity in scene.entities
+        )
+        has_world_elements = any(
+            entity.player_controller is not None
+            or entity.camera is not None
+            or entity.tilemap is not None
+            for entity in scene.entities
+        )
+        return has_ui_elements and not has_world_elements
+
+    def _fit_interface_scene(self) -> None:
+        if self.runtime is None:
+            return
+        scene = self.runtime.scene
+        rect = QRectF(0.0, 0.0, float(scene.width), float(scene.height))
+        self.graphics_scene.setSceneRect(rect)
+        self.resetTransform()
+        self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(rect.center())
+
     def fit_scene(self) -> None:
         if self.runtime is None:
             return
 
         self.follow_active_camera = False
+        if self._is_interface_scene():
+            self._fit_interface_scene()
+            return
 
         world_left = self.runtime.world_left
         world_top = self.runtime.world_top
@@ -403,6 +662,11 @@ class PlayCanvas(QGraphicsView):
 
     def fit_camera(self) -> None:
         if self.runtime is None:
+            return
+
+        if self._is_interface_scene():
+            self.follow_active_camera = False
+            self._fit_interface_scene()
             return
 
         scene = self.runtime.scene
@@ -489,6 +753,9 @@ class PlayCanvas(QGraphicsView):
         item.setRotation(
             entity.transform.rotation
         )
+        item.setData(0, entity.id)
+        if entity.ui_element is not None:
+            item.setZValue(float(entity.ui_element.get("layer", 0)))
 
         self.graphics_scene.addItem(
             item
@@ -498,10 +765,280 @@ class PlayCanvas(QGraphicsView):
             entity.id
         ] = item
 
+    @staticmethod
+    def _button_rect(item):
+        pending = list(item.childItems())
+        while pending:
+            child = pending.pop()
+            if isinstance(child, QGraphicsRectItem):
+                return child
+            pending.extend(child.childItems())
+        return None
+
+    def _set_button_state(self, item, state: str) -> None:
+        if self.runtime is None or item is None:
+            return
+        entity = self.runtime.scene.entity(str(item.data(0) or ""))
+        data = entity.ui_element if entity is not None else None
+        rect = self._button_rect(item)
+        if data is None or rect is None:
+            return
+        label = next(
+            (child for child in item.childItems() if isinstance(child, QGraphicsTextItem)),
+            None,
+        )
+        if label is not None:
+            label.setDefaultTextColor(QColor(str(data.get(
+                f"button_text_{state}_color", data.get("color", "#ffffff")
+            ))))
+        border = QColor(str(data.get("button_border_color", "#d5ad38")))
+        border.setAlphaF(max(0.0, min(1.0, float(data.get("button_border_opacity", 100)) / 100.0)))
+        rect.setPen(QPen(border, 2.0))
+        opacity = max(0.0, min(1.0, float(data.get("button_opacity", 100)) / 100.0))
+        rect.setOpacity(1.0)
+        if bool(data.get("button_transparent", False)) or opacity <= 0.0:
+            rect.setBrush(Qt.BrushStyle.NoBrush)
+            return
+        image_path = str(data.get(f"button_{state}_image", "") or "")
+        if image_path and self.project_root is not None:
+            pixmap = QPixmap(str((self.project_root / image_path).resolve()))
+            if not pixmap.isNull():
+                rect.setBrush(QBrush(pixmap.scaled(
+                    rect.rect().size().toSize(), Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )))
+                rect.setOpacity(opacity)
+                return
+        background = QColor(str(data.get(f"button_{state}_color", "#252a34")))
+        background.setAlphaF(opacity)
+        rect.setBrush(background)
+
+    def mouseMoveEvent(self, event) -> None:
+        scene_pos = self.mapToScene(event.position().toPoint())
+        item = self.graphics_scene.itemAt(scene_pos, self.transform())
+        while item is not None and item.data(0) is None:
+            item = item.parentItem()
+        hovered = None
+        if item is not None and self.runtime is not None:
+            entity = self.runtime.scene.entity(str(item.data(0) or ""))
+            data = entity.ui_element if entity is not None else None
+            if data is not None and str(data.get("type", "")) == "button":
+                hovered = item
+        if hovered is not self._hovered_ui_item:
+            if self._hovered_ui_item is not None and self._hovered_ui_item is not self._pressed_ui_item:
+                self._set_button_state(self._hovered_ui_item, "normal")
+            self._hovered_ui_item = hovered
+            if hovered is not None and hovered is not self._pressed_ui_item:
+                self._set_button_state(hovered, "hover")
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.runtime is not None:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            scene_pos = self.mapToScene(event.position().toPoint())
+            item = self.graphics_scene.itemAt(scene_pos, self.transform())
+            while item is not None and item.data(0) is None:
+                item = item.parentItem()
+            if item is not None:
+                entity_id = str(item.data(0) or "")
+                entity = self.runtime.scene.entity(entity_id)
+                data = entity.ui_element if entity is not None else None
+                if data is not None and str(data.get("type", "")) == "button":
+                    self._pressed_ui_item = item
+                    self._pressed_ui_entity_id = entity_id
+                    item.setScale(0.96)
+                    self._set_button_state(item, "pressed")
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._pressed_ui_item is not None:
+            item = self._pressed_ui_item
+            entity_id = self._pressed_ui_entity_id or ""
+            self._pressed_ui_item = None
+            self._pressed_ui_entity_id = None
+            item.setScale(1.0)
+            self._set_button_state(
+                item, "hover" if item is self._hovered_ui_item else "normal"
+            )
+            scene_pos = self.mapToScene(event.position().toPoint())
+            released = self.graphics_scene.itemAt(scene_pos, self.transform())
+            while released is not None and released.data(0) is None:
+                released = released.parentItem()
+            if released is item and self.runtime is not None:
+                entity = self.runtime.scene.entity(entity_id)
+                data = entity.ui_element if entity is not None else None
+                if data is not None:
+                    self.ui_action_requested.emit(
+                        str(data.get("action", "none")),
+                        str(data.get("target_scene", "")),
+                    )
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    @staticmethod
+    def _flow_key_name(key: int) -> str:
+        keys = {
+            Qt.Key.Key_Space: "space",
+            Qt.Key.Key_Return: "enter",
+            Qt.Key.Key_Enter: "enter",
+            Qt.Key.Key_Left: "left",
+            Qt.Key.Key_Right: "right",
+            Qt.Key.Key_Up: "up",
+            Qt.Key.Key_Down: "down",
+            Qt.Key.Key_A: "a",
+            Qt.Key.Key_D: "d",
+            Qt.Key.Key_W: "w",
+            Qt.Key.Key_S: "s",
+            Qt.Key.Key_E: "e",
+            Qt.Key.Key_F: "f",
+        }
+        return keys.get(Qt.Key(key), "")
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not event.isAutoRepeat():
+            key_name = self._flow_key_name(event.key())
+            if key_name:
+                self.flow_key_pressed.emit(key_name)
+        if self.runtime is None:
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        if key in (Qt.Key.Key_A, Qt.Key.Key_Left):
+            self.runtime.input.left = True
+            event.accept()
+            return
+        if key in (Qt.Key.Key_D, Qt.Key.Key_Right):
+            self.runtime.input.right = True
+            event.accept()
+            return
+        if key in (Qt.Key.Key_Space, Qt.Key.Key_Up, Qt.Key.Key_W):
+            self.runtime.input.jump = True
+            event.accept()
+            return
+        if key == Qt.Key.Key_Escape:
+            self.end_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if self.runtime is None:
+            super().keyReleaseEvent(event)
+            return
+        if event.isAutoRepeat():
+            event.accept()
+            return
+        key = event.key()
+        if key in (Qt.Key.Key_A, Qt.Key.Key_Left):
+            self.runtime.input.left = False
+            event.accept()
+            return
+        if key in (Qt.Key.Key_D, Qt.Key.Key_Right):
+            self.runtime.input.right = False
+            event.accept()
+            return
+        if key in (Qt.Key.Key_Space, Qt.Key.Key_Up, Qt.Key.Key_W):
+            self.runtime.input.jump = False
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        if self.runtime is not None:
+            self.runtime.input.left = False
+            self.runtime.input.right = False
+            self.runtime.input.jump = False
+        super().focusOutEvent(event)
+
+    def _create_ui_element_item(self, entity: SceneEntity):
+        data = entity.ui_element
+        if data is None:
+            return None
+        element_type = str(data.get("type", "text"))
+        text = str(data.get("text", ""))
+        color = QColor(str(data.get("color", "#ffffff")))
+        font = QFont()
+        font.setPointSize(max(8, int(data.get("font_size", 24))))
+        font_path = str(data.get("font", "") or "")
+        if font_path and self.project_root is not None:
+            path = (self.project_root / font_path).resolve()
+            if path.is_file():
+                font_id = QFontDatabase.addApplicationFont(str(path))
+                families = QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    font.setFamily(families[0])
+        width = max(1.0, float(data.get("width", 180.0)))
+        height = max(1.0, float(data.get("height", 48.0)))
+        if element_type == "image":
+            asset = str(data.get("asset", "") or "")
+            if not asset or self.project_root is None:
+                return None
+            pixmap = QPixmap(str((self.project_root / asset).resolve()))
+            if pixmap.isNull():
+                return None
+            pixmap = pixmap.scaled(
+                int(width), int(height),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            item = QGraphicsPixmapItem(pixmap)
+            item.setOffset(-width / 2.0, -height / 2.0)
+            return item
+        if element_type == "button":
+            group = QGraphicsItemGroup()
+            rect = QGraphicsRectItem(-width / 2.0, -height / 2.0, width, height)
+            background_opacity = max(0.0, min(1.0, float(data.get("button_opacity", 100)) / 100.0))
+            border_opacity = max(0.0, min(1.0, float(data.get("button_border_opacity", 100)) / 100.0))
+            border_color = QColor(str(data.get("button_border_color", "#d5ad38")))
+            border_color.setAlphaF(border_opacity)
+            rect.setPen(QPen(border_color, 2.0))
+            normal_image = str(data.get("button_normal_image", "") or "")
+            normal_pixmap = QPixmap()
+            if normal_image and self.project_root is not None:
+                normal_pixmap = QPixmap(str((self.project_root / normal_image).resolve()))
+            if bool(data.get("button_transparent", False)) or background_opacity <= 0.0:
+                rect.setBrush(Qt.BrushStyle.NoBrush)
+            elif not normal_pixmap.isNull():
+                rect.setBrush(QBrush(normal_pixmap.scaled(
+                    int(width), int(height), Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )))
+                rect.setOpacity(background_opacity)
+            else:
+                background = QColor(str(data.get("button_normal_color", "#252a34")))
+                background.setAlphaF(background_opacity)
+                rect.setBrush(background)
+            label = QGraphicsTextItem(text)
+            label.setDefaultTextColor(QColor(str(data.get("button_text_normal_color", data.get("color", "#ffffff")))))
+            label.setFont(font)
+            bounds = label.boundingRect()
+            label.setPos(-bounds.width() / 2.0, -bounds.height() / 2.0)
+            group.addToGroup(rect)
+            group.addToGroup(label)
+            return group
+        # O texto fica dentro de um contêiner cuja origem representa
+        # o centro do elemento. A posição da entidade move o contêiner,
+        # sem sobrescrever o deslocamento interno usado para centralizar.
+        group = QGraphicsItemGroup()
+        label = QGraphicsTextItem(text)
+        label.setDefaultTextColor(color)
+        label.setFont(font)
+        bounds = label.boundingRect()
+        label.setPos(-bounds.width() / 2.0, -bounds.height() / 2.0)
+        group.addToGroup(label)
+        return group
+
     def _create_visual(
         self,
         entity: SceneEntity,
-    ) -> QGraphicsPixmapItem | QGraphicsRectItem | None:
+    ):
+        ui_item = self._create_ui_element_item(entity)
+        if ui_item is not None:
+            return ui_item
+
         tilemap_item = self._create_tilemap_item(
             entity
         )
@@ -1120,6 +1657,7 @@ class PlayPreview(QWidget):
 
         self.project_root: Path | None = None
         self.runtime: SceneRuntime | None = None
+        self.flow_runtime: FlowchartRuntime | None = None
 
         self.active_area_sequences: set[str] = set()
         self.scene_serializer = SceneSerializer()
@@ -1159,6 +1697,12 @@ class PlayPreview(QWidget):
         )
 
         self.canvas = PlayCanvas()
+        self.canvas.continue_requested.connect(
+            self._continue_after_death
+        )
+        self.canvas.end_requested.connect(self.stop)
+        self.canvas.ui_action_requested.connect(self._run_ui_action)
+        self.canvas.flow_key_pressed.connect(self._on_flow_key_pressed)
 
         header = QHBoxLayout()
 
@@ -1227,6 +1771,13 @@ class PlayPreview(QWidget):
         )
 
         self.runtime.start()
+        self.flow_runtime = FlowchartRuntime(
+            scene,
+            self._show_flow_message,
+            self._change_flow_scene,
+            self._play_flow_animation,
+        )
+        self.flow_runtime.start()
 
         self.canvas.set_runtime(
             self.project_root,
@@ -1241,13 +1792,76 @@ class PlayPreview(QWidget):
 
         self.canvas.setFocus()
 
+    def _on_flow_key_pressed(self, key_name: str) -> None:
+        if self.flow_runtime is not None:
+            self.flow_runtime.trigger_key(key_name)
+
+    def _show_flow_message(
+        self,
+        entity_name: str,
+        message: str,
+        duration_ms: int,
+    ) -> None:
+        self.area_event.emit(f"Flowchart ({entity_name}): {message}")
+        self.canvas.show_message(message, duration_ms)
+
+    def _play_flow_animation(
+        self,
+        entity_id: str,
+        entity_name: str,
+        animation_name: str,
+    ) -> bool:
+        if self.runtime is None:
+            return False
+        played = self.runtime.play_flow_animation(entity_id, animation_name)
+        if played:
+            self.area_event.emit(
+                f"Flowchart ({entity_name}): animação {animation_name}"
+            )
+        else:
+            self.area_event.emit(
+                f"Flowchart ({entity_name}): animação indisponível"
+            )
+        return played
+
+    def _change_flow_scene(
+        self,
+        entity_name: str,
+        target_scene: str,
+    ) -> bool:
+        self.area_event.emit(
+            f"Flowchart ({entity_name}): trocar para {target_scene}"
+        )
+        return self._change_scene(target_scene)
+
+    def _run_ui_action(self, action: str, target_scene: str) -> None:
+        if action == "continue_game":
+            self._continue_after_death()
+        elif action == "restart_scene" and self.runtime is not None and self.project_root is not None:
+            self.start(self.project_root, self.runtime.scene)
+        elif action == "change_scene" and target_scene.strip():
+            self._change_scene(target_scene.strip())
+        elif action == "quit":
+            self.stop()
+
+    def _continue_after_death(self) -> None:
+        if self.runtime is None:
+            return
+        if self.runtime.respawn_player_now():
+            self.canvas.complete_death_transition()
+            self.canvas.setFocus()
+            self.area_event.emit("Respawn confirmado.")
+
     def stop_runtime(self) -> None:
         self.timer.stop()
 
         if self.runtime is not None:
             self.runtime.stop()
+        if self.flow_runtime is not None:
+            self.flow_runtime.stop()
 
         self.runtime = None
+        self.flow_runtime = None
 
         self.status_label.setText(
             "Parado"
@@ -1264,6 +1878,18 @@ class PlayPreview(QWidget):
 
         self.runtime.update(
             1.0 / 60.0
+        )
+        if self.flow_runtime is not None:
+            self.flow_runtime.update(1.0 / 60.0)
+
+        player = self.runtime.player
+        controller = (
+            player.player_controller if player is not None else None
+        )
+        self.canvas.update_health_hud(
+            self.runtime.player_health(),
+            self.runtime.player_max_health(),
+            bool(controller and controller.show_health_hud),
         )
 
         for area_event in (
@@ -1510,6 +2136,62 @@ class PlayPreview(QWidget):
             )
             return
 
+        if action_type == "damage_player":
+            if self.runtime is None:
+                self._finish_area_sequence(
+                    area_id
+                )
+                return
+
+            amount = max(
+                1,
+                int(
+                    getattr(
+                        action,
+                        "damage_amount",
+                        1,
+                    )
+                    or 1
+                ),
+            )
+
+            health, maximum = (
+                self.runtime.damage_player(
+                    amount
+                )
+            )
+
+            damage_applied = self.runtime.last_player_damage_applied()
+            if damage_applied:
+                self.area_event.emit(
+                    f"Dano: {amount} | Vida: {health}/{maximum}"
+                )
+            else:
+                self.area_event.emit("Dano ignorado: Player invulnerável.")
+
+            if damage_applied and health == 0 and self.runtime.player is not None:
+                controller = self.runtime.player.player_controller
+                if controller is not None:
+                    message = (
+                        controller.death_message
+                        if controller.show_death_message
+                        else ""
+                    )
+                    self.canvas.start_death_transition(
+                        message,
+                        controller.respawn_delay,
+                        controller.death_fade_duration,
+                        controller.confirm_respawn,
+                    )
+                    self.area_event.emit("Player morreu; respawn iniciado.")
+
+            self._run_area_actions(
+                area_id,
+                actions,
+                index + 1,
+            )
+            return
+
         if action_type == "set_collider":
             if self.runtime is None:
                 self._finish_area_sequence(
@@ -1693,11 +2375,8 @@ class PlayPreview(QWidget):
             target_player is None
             and source_player is not None
         ):
-            target_player = (
-                SceneEntity.from_dict(
-                    source_player.to_dict()
-                )
-            )
+            player_data = self._player_data_for_scene_change(source_player)
+            target_player = SceneEntity.from_dict(player_data)
 
             scene.add_entity(
                 target_player
@@ -1748,6 +2427,46 @@ class PlayPreview(QWidget):
         )
 
         return True
+
+    @staticmethod
+    def _player_data_for_scene_change(
+        source_player: SceneEntity,
+    ) -> dict[str, object]:
+        data = source_player.to_dict()
+        flowchart = data.get("blueprint")
+        if not isinstance(flowchart, dict):
+            return data
+
+        nodes = flowchart.get("nodes", [])
+        connections = flowchart.get("connections", [])
+        if not isinstance(nodes, list) or not isinstance(connections, list):
+            return data
+
+        scene_start_ids = {
+            str(node.get("id"))
+            for node in nodes
+            if isinstance(node, dict)
+            and str(node.get("type")) == "scene_start"
+        }
+        if not scene_start_ids:
+            return data
+
+        copied_flowchart = dict(flowchart)
+        copied_flowchart["nodes"] = [
+            dict(node)
+            for node in nodes
+            if isinstance(node, dict)
+            and str(node.get("id")) not in scene_start_ids
+        ]
+        copied_flowchart["connections"] = [
+            dict(connection)
+            for connection in connections
+            if isinstance(connection, dict)
+            and str(connection.get("from_node")) not in scene_start_ids
+            and str(connection.get("to_node")) not in scene_start_ids
+        ]
+        data["blueprint"] = copied_flowchart
+        return data
 
     @staticmethod
     def _default_spawn_for_scene(

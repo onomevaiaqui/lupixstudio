@@ -169,6 +169,7 @@ class EntityInspectorPanel(QWidget):
     SECTION_COLLIDER = "collider"
     SECTION_AREA2D = "area2d"
     SECTION_PLAYER = "player"
+    SECTION_UI_ELEMENT = "ui_element"
 
     def __init__(
         self,
@@ -180,6 +181,7 @@ class EntityInspectorPanel(QWidget):
         collider_editor: QWidget,
         area2d_editor: QWidget,
         player_editor: QWidget,
+        ui_element_editor: QWidget,
     ) -> None:
         super().__init__()
 
@@ -258,6 +260,11 @@ class EntityInspectorPanel(QWidget):
             self.SECTION_PLAYER,
             "Player Controller",
             player_editor,
+        )
+
+        self._add_section(
+            layout, self.SECTION_UI_ELEMENT,
+            "Elemento UI", ui_element_editor,
         )
 
         layout.addStretch()

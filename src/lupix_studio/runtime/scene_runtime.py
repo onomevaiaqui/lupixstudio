@@ -27,10 +27,21 @@ class EntityRuntimeState:
     on_ground: bool = False
     jump_was_pressed: bool = False
 
+    health: int = 0
+    is_dead: bool = False
+    respawn_remaining: float = 0.0
+    spawn_x: float = 0.0
+    spawn_y: float = 0.0
+    damage_stun_remaining: float = 0.0
+    invulnerability_remaining: float = 0.0
+    last_damage_applied: bool = False
+
     animation_name: str = ""
     animation_frame_index: int = 0
     animation_elapsed: float = 0.0
     animation_frame: int = 0
+    forced_animation_name: str = ""
+    forced_animation_remaining: float = 0.0
 
 
 @dataclass(slots=True)
@@ -142,9 +153,32 @@ class SceneRuntime:
         player = self.player
 
         if player is not None:
+            spawn_point = self.scene.spawn_point()
+
+            if spawn_point is not None:
+                player.transform.x = (
+                    spawn_point.transform.x
+                )
+                player.transform.y = (
+                    spawn_point.transform.y
+                )
+
             state = self.state_for(
                 player.id
             )
+
+            state.spawn_x = player.transform.x
+            state.spawn_y = player.transform.y
+            state.is_dead = False
+            state.respawn_remaining = 0.0
+
+            if player.player_controller is not None:
+                state.health = max(
+                    1,
+                    int(
+                        player.player_controller.max_health
+                    ),
+                )
 
             self._update_ground_state(
                 player,
@@ -207,6 +241,47 @@ class SceneRuntime:
             player.id
         )
 
+        state.invulnerability_remaining = max(
+            0.0, state.invulnerability_remaining - delta
+        )
+        if state.forced_animation_remaining > 0.0:
+            state.forced_animation_remaining = max(
+                0.0,
+                state.forced_animation_remaining - delta,
+            )
+            if state.forced_animation_remaining <= 0.0:
+                state.forced_animation_name = ""
+
+        if state.is_dead:
+            state.velocity_x = 0.0
+            state.velocity_y = 0.0
+            state.respawn_remaining = max(
+                0.0,
+                state.respawn_remaining - delta,
+            )
+            self._update_player_animation(
+                player,
+                state,
+                delta,
+            )
+            if (
+                state.respawn_remaining <= 0.0
+                and not controller.confirm_respawn
+            ):
+                self._respawn_player(player, state)
+            state.jump_was_pressed = self.input.jump
+            return
+
+        if state.damage_stun_remaining > 0.0:
+            state.damage_stun_remaining = max(
+                0.0, state.damage_stun_remaining - delta
+            )
+            state.velocity_x = 0.0
+            state.velocity_y = 0.0
+            self._update_player_animation(player, state, delta)
+            state.jump_was_pressed = self.input.jump
+            return
+
         self._update_horizontal_velocity(
             controller.speed,
             controller.air_control,
@@ -266,6 +341,147 @@ class SceneRuntime:
             self.input.jump
         )
 
+    def player_health(self) -> int:
+        player = self.player
+
+        if player is None:
+            return 0
+
+        return self.state_for(
+            player.id
+        ).health
+
+    def player_max_health(self) -> int:
+        player = self.player
+
+        if (
+            player is None
+            or player.player_controller is None
+        ):
+            return 0
+
+        return max(
+            1,
+            int(
+                player.player_controller.max_health
+            ),
+        )
+
+    def damage_player(
+        self,
+        amount: int,
+    ) -> tuple[int, int]:
+        player = self.player
+
+        if (
+            player is None
+            or player.player_controller is None
+        ):
+            return (0, 0)
+
+        state = self.state_for(
+            player.id
+        )
+
+        maximum = self.player_max_health()
+
+        state.last_damage_applied = False
+        if state.is_dead or state.invulnerability_remaining > 0.0:
+            return (state.health, maximum)
+
+        state.health = max(
+            0,
+            state.health - max(1, int(amount)),
+        )
+
+        state.last_damage_applied = True
+        if state.health == 0:
+            self._begin_player_death(player, state)
+        else:
+            controller = player.player_controller
+            state.damage_stun_remaining = max(
+                0.0, float(controller.damage_stun_duration)
+            )
+            state.invulnerability_remaining = max(
+                state.damage_stun_remaining,
+                float(controller.damage_invulnerability),
+            )
+            self._update_player_animation(
+                player, state, 0.0, force_reset=True
+            )
+
+        return (
+            state.health,
+            maximum,
+        )
+
+    def last_player_damage_applied(self) -> bool:
+        player = self.player
+        if player is None:
+            return False
+        return self.state_for(player.id).last_damage_applied
+
+    def _begin_player_death(
+        self,
+        player: SceneEntity,
+        state: EntityRuntimeState,
+    ) -> None:
+        controller = player.player_controller
+        if controller is None or state.is_dead:
+            return
+        state.is_dead = True
+        state.respawn_remaining = max(
+            0.0,
+            float(controller.respawn_delay),
+        )
+        state.velocity_x = 0.0
+        state.velocity_y = 0.0
+        state.on_ground = False
+        state.jump_was_pressed = self.input.jump
+        self.input = RuntimeInput()
+        self._update_player_animation(
+            player, state, 0.0, force_reset=True
+        )
+
+    def respawn_player_now(self) -> bool:
+        player = self.player
+        if player is None:
+            return False
+        state = self.state_for(player.id)
+        if not state.is_dead:
+            return False
+        self._respawn_player(player, state)
+        return True
+
+    def _respawn_player(
+        self,
+        player: SceneEntity,
+        state: EntityRuntimeState,
+    ) -> None:
+        spawn_point = self.scene.spawn_point()
+        if spawn_point is not None:
+            player.transform.x = spawn_point.transform.x
+            player.transform.y = spawn_point.transform.y
+        else:
+            player.transform.x = state.spawn_x
+            player.transform.y = state.spawn_y
+        state.velocity_x = 0.0
+        state.velocity_y = 0.0
+        state.on_ground = False
+        state.jump_was_pressed = self.input.jump
+        state.health = self.player_max_health()
+        state.is_dead = False
+        state.respawn_remaining = 0.0
+        state.damage_stun_remaining = 0.0
+        state.invulnerability_remaining = 0.0
+        state.last_damage_applied = False
+        self.input = RuntimeInput()
+        self._update_ground_state(player, state)
+        self._update_player_animation(
+            player, state, 0.0, force_reset=True
+        )
+        self._sync_area2d_state(player)
+
     def animation_frame_for(
         self,
         entity_id: str,
@@ -285,6 +501,37 @@ class SceneRuntime:
         return self.state_for(
             entity_id
         ).animation_name
+
+    def play_flow_animation(
+        self,
+        entity_id: str,
+        animation_name: str,
+    ) -> bool:
+        entity = self.scene.entity(entity_id)
+        if (
+            entity is None
+            or entity is not self.player
+            or entity.animation is None
+            or not entity.animation.enabled
+        ):
+            return False
+        clip = entity.animation.clip(animation_name)
+        if clip is None:
+            return False
+        frames = list(clip.frames)
+        if not frames and clip.regions:
+            frames = list(clip.regions.keys())
+        duration = max(
+            1.0 / max(0.01, float(clip.fps)),
+            max(1, len(frames)) / max(0.01, float(clip.fps)),
+        )
+        state = self.state_for(entity_id)
+        state.forced_animation_name = animation_name
+        state.forced_animation_remaining = duration
+        state.animation_name = ""
+        state.animation_frame_index = 0
+        state.animation_elapsed = 0.0
+        return True
 
     def _update_player_animation(
         self,
@@ -313,12 +560,24 @@ class SceneRuntime:
             elif state.velocity_x > 0.01:
                 player.sprite.flip_x = False
 
-        animation_name = (
-            self._desired_player_animation(
-                animation,
-                state,
+        death_clip = animation.clip("death")
+        damage_clip = animation.clip("damage")
+        if state.is_dead and death_clip is not None:
+            animation_name = "death"
+        elif state.damage_stun_remaining > 0.0 and damage_clip is not None:
+            animation_name = "damage"
+        elif (
+            state.forced_animation_remaining > 0.0
+            and animation.clip(state.forced_animation_name) is not None
+        ):
+            animation_name = state.forced_animation_name
+        else:
+            animation_name = (
+                self._desired_player_animation(
+                    animation,
+                    state,
+                )
             )
-        )
 
         if not animation_name:
             state.animation_name = ""

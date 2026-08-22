@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -34,6 +35,15 @@ class PlayerControllerEditor(QWidget):
         self.gravity_spin = QDoubleSpinBox()
         self.max_fall_speed_spin = QDoubleSpinBox()
         self.air_control_spin = QDoubleSpinBox()
+        self.max_health_spin = QDoubleSpinBox()
+        self.respawn_delay_spin = QDoubleSpinBox()
+        self.death_fade_spin = QDoubleSpinBox()
+        self.show_death_message_checkbox = QCheckBox()
+        self.death_message_edit = QLineEdit()
+        self.confirm_respawn_checkbox = QCheckBox()
+        self.damage_stun_spin = QDoubleSpinBox()
+        self.damage_invulnerability_spin = QDoubleSpinBox()
+        self.show_health_hud_checkbox = QCheckBox()
 
         for spin in (
             self.speed_spin,
@@ -66,6 +76,24 @@ class PlayerControllerEditor(QWidget):
         self.air_control_spin.setSingleStep(
             0.05
         )
+
+        self.max_health_spin.setRange(1.0, 9999.0)
+        self.max_health_spin.setDecimals(0)
+        self.max_health_spin.setSingleStep(1.0)
+        self.respawn_delay_spin.setRange(0.0, 60.0)
+        self.respawn_delay_spin.setDecimals(2)
+        self.respawn_delay_spin.setSingleStep(0.25)
+        self.respawn_delay_spin.setSuffix(" s")
+        self.death_fade_spin.setRange(0.05, 3.0)
+        self.death_fade_spin.setDecimals(2)
+        self.death_fade_spin.setSingleStep(0.05)
+        self.death_fade_spin.setSuffix(" s")
+        self.death_message_edit.setPlaceholderText("Você morreu")
+        for spin in (self.damage_stun_spin, self.damage_invulnerability_spin):
+            spin.setRange(0.0, 10.0)
+            spin.setDecimals(2)
+            spin.setSingleStep(0.05)
+            spin.setSuffix(" s")
 
         self.add_button = QPushButton(
             "Adicionar Player Controller"
@@ -105,6 +133,47 @@ class PlayerControllerEditor(QWidget):
         form.addRow(
             "Controle no ar:",
             self.air_control_spin,
+        )
+
+        form.addRow(
+            "Vida máxima:",
+            self.max_health_spin,
+        )
+
+        form.addRow(
+            "Tempo de respawn:",
+            self.respawn_delay_spin,
+        )
+
+        form.addRow(
+            "Duração do fade:",
+            self.death_fade_spin,
+        )
+
+        form.addRow(
+            "Exibir texto de morte:",
+            self.show_death_message_checkbox,
+        )
+
+        form.addRow(
+            "Texto de morte:",
+            self.death_message_edit,
+        )
+
+        form.addRow(
+            "Perguntar se deseja continuar:",
+            self.confirm_respawn_checkbox,
+        )
+
+        form.addRow("Bloqueio ao sofrer dano:", self.damage_stun_spin)
+        form.addRow(
+            "Invulnerabilidade após dano:",
+            self.damage_invulnerability_spin,
+        )
+
+        form.addRow(
+            "Mostrar vida no Preview:",
+            self.show_health_hud_checkbox,
         )
 
         layout = QVBoxLayout(
@@ -154,6 +223,37 @@ class PlayerControllerEditor(QWidget):
         )
 
         self.air_control_spin.valueChanged.connect(
+            self._apply_values
+        )
+
+        self.max_health_spin.valueChanged.connect(
+            self._apply_values
+        )
+
+        self.respawn_delay_spin.valueChanged.connect(
+            self._apply_values
+        )
+
+        self.death_fade_spin.valueChanged.connect(
+            self._apply_values
+        )
+
+        self.show_death_message_checkbox.toggled.connect(
+            self._apply_values
+        )
+
+        self.death_message_edit.editingFinished.connect(
+            self._apply_values
+        )
+
+        self.confirm_respawn_checkbox.toggled.connect(
+            self._apply_values
+        )
+        self.damage_stun_spin.valueChanged.connect(self._apply_values)
+        self.damage_invulnerability_spin.valueChanged.connect(
+            self._apply_values
+        )
+        self.show_health_hud_checkbox.toggled.connect(
             self._apply_values
         )
 
@@ -222,6 +322,19 @@ class PlayerControllerEditor(QWidget):
             self.air_control_spin.setEnabled(
                 has_controller
             )
+            self.max_health_spin.setEnabled(has_controller)
+            self.respawn_delay_spin.setEnabled(has_controller)
+            self.death_fade_spin.setEnabled(has_controller)
+            self.show_death_message_checkbox.setEnabled(
+                has_controller
+            )
+            self.death_message_edit.setEnabled(has_controller)
+            self.confirm_respawn_checkbox.setEnabled(
+                has_controller
+            )
+            self.damage_stun_spin.setEnabled(has_controller)
+            self.damage_invulnerability_spin.setEnabled(has_controller)
+            self.show_health_hud_checkbox.setEnabled(has_controller)
 
             if controller is None:
                 self.enabled_checkbox.setChecked(
@@ -247,6 +360,15 @@ class PlayerControllerEditor(QWidget):
                 self.air_control_spin.setValue(
                     0.75
                 )
+                self.max_health_spin.setValue(3.0)
+                self.respawn_delay_spin.setValue(1.0)
+                self.death_fade_spin.setValue(0.35)
+                self.show_death_message_checkbox.setChecked(True)
+                self.death_message_edit.setText("Você morreu")
+                self.confirm_respawn_checkbox.setChecked(True)
+                self.damage_stun_spin.setValue(0.15)
+                self.damage_invulnerability_spin.setValue(0.75)
+                self.show_health_hud_checkbox.setChecked(True)
 
                 return
 
@@ -272,6 +394,33 @@ class PlayerControllerEditor(QWidget):
 
             self.air_control_spin.setValue(
                 controller.air_control
+            )
+            self.max_health_spin.setValue(
+                controller.max_health
+            )
+            self.respawn_delay_spin.setValue(
+                controller.respawn_delay
+            )
+            self.death_fade_spin.setValue(
+                controller.death_fade_duration
+            )
+            self.show_death_message_checkbox.setChecked(
+                controller.show_death_message
+            )
+            self.death_message_edit.setText(
+                controller.death_message
+            )
+            self.confirm_respawn_checkbox.setChecked(
+                controller.confirm_respawn
+            )
+            self.damage_stun_spin.setValue(
+                controller.damage_stun_duration
+            )
+            self.damage_invulnerability_spin.setValue(
+                controller.damage_invulnerability
+            )
+            self.show_health_hud_checkbox.setChecked(
+                controller.show_health_hud
             )
 
         finally:
@@ -341,6 +490,31 @@ class PlayerControllerEditor(QWidget):
 
         controller.air_control = (
             self.air_control_spin.value()
+        )
+        controller.max_health = int(
+            self.max_health_spin.value()
+        )
+        controller.respawn_delay = (
+            self.respawn_delay_spin.value()
+        )
+        controller.death_fade_duration = (
+            self.death_fade_spin.value()
+        )
+        controller.show_death_message = (
+            self.show_death_message_checkbox.isChecked()
+        )
+        controller.death_message = (
+            self.death_message_edit.text()
+        )
+        controller.confirm_respawn = (
+            self.confirm_respawn_checkbox.isChecked()
+        )
+        controller.damage_stun_duration = self.damage_stun_spin.value()
+        controller.damage_invulnerability = (
+            self.damage_invulnerability_spin.value()
+        )
+        controller.show_health_hud = (
+            self.show_health_hud_checkbox.isChecked()
         )
 
         self.player_changed.emit(

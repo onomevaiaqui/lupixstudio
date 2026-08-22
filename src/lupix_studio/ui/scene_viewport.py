@@ -4,7 +4,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
+    QBrush,
     QColor,
+    QFont,
+    QFontDatabase,
     QPainter,
     QPen,
     QPixmap,
@@ -19,6 +22,7 @@ from PySide6.QtWidgets import (
     QGraphicsPixmapItem,
     QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsTextItem,
     QGraphicsView,
     QHBoxLayout,
     QLabel,
@@ -252,6 +256,9 @@ class SceneCanvas(QGraphicsView):
             entity.transform.rotation
         )
 
+        if entity.ui_element is not None:
+            item.setZValue(float(entity.ui_element.get("layer", 0)))
+
         # A seleção visual padrão do QGraphicsItem fica desativada.
         # A Hierarquia continua sendo a fonte de verdade da seleção,
         # mas nenhum retângulo de seleção é desenhado ao redor do Player.
@@ -281,6 +288,84 @@ class SceneCanvas(QGraphicsView):
             entity.id
         ] = item
 
+    def _create_ui_element_item(self, entity: SceneEntity):
+        data = entity.ui_element
+        if data is None:
+            return None
+        element_type = str(data.get("type", "text"))
+        text = str(data.get("text", ""))
+        color = QColor(str(data.get("color", "#ffffff")))
+        font = QFont()
+        font.setPointSize(max(8, int(data.get("font_size", 24))))
+        font_path = str(data.get("font", "") or "")
+        if font_path and self.project_root is not None:
+            path = (self.project_root / font_path).resolve()
+            if path.is_file():
+                font_id = QFontDatabase.addApplicationFont(str(path))
+                families = QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    font.setFamily(families[0])
+        width = max(1.0, float(data.get("width", 180.0)))
+        height = max(1.0, float(data.get("height", 48.0)))
+        if element_type == "image":
+            asset = str(data.get("asset", "") or "")
+            if not asset or self.project_root is None:
+                return None
+            pixmap = QPixmap(str((self.project_root / asset).resolve()))
+            if pixmap.isNull():
+                return None
+            pixmap = pixmap.scaled(
+                int(width), int(height),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            item = QGraphicsPixmapItem(pixmap)
+            item.setOffset(-width / 2.0, -height / 2.0)
+            return item
+        if element_type == "button":
+            group = QGraphicsItemGroup()
+            rect = QGraphicsRectItem(-width / 2.0, -height / 2.0, width, height)
+            background_opacity = max(0.0, min(1.0, float(data.get("button_opacity", 100)) / 100.0))
+            border_opacity = max(0.0, min(1.0, float(data.get("button_border_opacity", 100)) / 100.0))
+            border_color = QColor(str(data.get("button_border_color", "#d5ad38")))
+            border_color.setAlphaF(border_opacity)
+            rect.setPen(QPen(border_color, 2.0))
+            normal_image = str(data.get("button_normal_image", "") or "")
+            normal_pixmap = QPixmap()
+            if normal_image and self.project_root is not None:
+                normal_pixmap = QPixmap(str((self.project_root / normal_image).resolve()))
+            if bool(data.get("button_transparent", False)) or background_opacity <= 0.0:
+                rect.setBrush(Qt.BrushStyle.NoBrush)
+            elif not normal_pixmap.isNull():
+                rect.setBrush(QBrush(normal_pixmap.scaled(
+                    int(width), int(height), Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )))
+                rect.setOpacity(background_opacity)
+            else:
+                background = QColor(str(data.get("button_normal_color", "#252a34")))
+                background.setAlphaF(background_opacity)
+                rect.setBrush(background)
+            label = QGraphicsTextItem(text)
+            label.setDefaultTextColor(QColor(str(data.get("button_text_normal_color", data.get("color", "#ffffff")))))
+            label.setFont(font)
+            bounds = label.boundingRect()
+            label.setPos(-bounds.width() / 2.0, -bounds.height() / 2.0)
+            group.addToGroup(rect)
+            group.addToGroup(label)
+            return group
+        # O texto fica dentro de um contêiner cuja origem representa
+        # o centro do elemento. A posição da entidade move o contêiner,
+        # sem sobrescrever o deslocamento interno usado para centralizar.
+        group = QGraphicsItemGroup()
+        label = QGraphicsTextItem(text)
+        label.setDefaultTextColor(color)
+        label.setFont(font)
+        bounds = label.boundingRect()
+        label.setPos(-bounds.width() / 2.0, -bounds.height() / 2.0)
+        group.addToGroup(label)
+        return group
+
     def _create_entity_item(
         self,
         entity: SceneEntity,
@@ -288,6 +373,11 @@ class SceneCanvas(QGraphicsView):
         group = QGraphicsItemGroup()
 
         has_visual = False
+
+        ui_item = self._create_ui_element_item(entity)
+        if ui_item is not None:
+            group.addToGroup(ui_item)
+            has_visual = True
 
         tilemap_item = self._create_tilemap_item(
             entity
@@ -1369,14 +1459,20 @@ class SceneCanvas(QGraphicsView):
             )
             return
 
-        entity_id = self._active_entity_id
+        if self.resource is None:
+            event.accept()
+            return
 
-        if (
-            entity_id is None
-            or self.resource is None
-        ):
-            # Sem entidade escolhida na Hierarquia, o clique
-            # na cena não seleciona itens por baixo do cursor.
+        scene_position = self.mapToScene(event.position().toPoint())
+        clicked = self.graphics_scene.itemAt(scene_position, QTransform())
+        while clicked is not None and clicked.data(0) is None:
+            clicked = clicked.parentItem()
+        if clicked is not None and clicked.data(0) is not None:
+            self._active_entity_id = str(clicked.data(0))
+            self.entity_selected.emit(self._active_entity_id)
+
+        entity_id = self._active_entity_id
+        if entity_id is None:
             event.accept()
             return
 

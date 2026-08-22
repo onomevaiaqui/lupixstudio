@@ -317,6 +317,7 @@ class SceneTree(QWidget):
                 label,
             )
 
+
         if entity.player_controller is not None:
             label = "Player Controller"
 
@@ -772,6 +773,14 @@ class SceneTree(QWidget):
         self.refresh()
 
         self.select_entity(
+            entity.id
+        )
+
+        # select_entity bloqueia os sinais da árvore para restaurações
+        # internas. Na criação, porém, o Inspector precisa receber
+        # explicitamente a nova entidade; isso garante que o Inspector
+        # troque de contexto antes de o usuário adicionar componentes.
+        self.entity_selected.emit(
             entity.id
         )
 

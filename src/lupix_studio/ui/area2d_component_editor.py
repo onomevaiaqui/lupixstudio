@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStyle,
     QToolButton,
     QVBoxLayout,
@@ -395,6 +396,10 @@ class Area2DComponentEditor(QWidget):
             "set_collider",
         )
         action_combo.addItem(
+            "Causar dano",
+            "damage_player",
+        )
+        action_combo.addItem(
             "Trocar cena",
             "change_scene",
         )
@@ -504,6 +509,10 @@ class Area2DComponentEditor(QWidget):
             action.message_text
         )
 
+        damage_spin = QSpinBox()
+        damage_spin.setRange(1, 999)
+        damage_spin.setValue(max(1, action.damage_amount))
+
         wait_spin = QDoubleSpinBox()
         wait_spin.setRange(
             0.0,
@@ -585,6 +594,10 @@ class Area2DComponentEditor(QWidget):
             wait_spin,
         )
         details_layout.addRow(
+            "Dano:",
+            damage_spin,
+        )
+        details_layout.addRow(
             "Posição X:",
             player_x_spin,
         )
@@ -629,6 +642,15 @@ class Area2DComponentEditor(QWidget):
                 wait_spin
             ).setVisible(
                 kind == "wait"
+            )
+
+            damage_spin.setVisible(
+                kind == "damage_player"
+            )
+            details_layout.labelForField(
+                damage_spin
+            ).setVisible(
+                kind == "damage_player"
             )
 
             player_x_spin.setVisible(
@@ -707,6 +729,9 @@ class Area2DComponentEditor(QWidget):
             current.wait_seconds = (
                 wait_spin.value()
             )
+            current.damage_amount = (
+                damage_spin.value()
+            )
             current.target_scene = str(
                 scene_combo.currentData()
                 or ""
@@ -738,6 +763,9 @@ class Area2DComponentEditor(QWidget):
             save_row
         )
         wait_spin.valueChanged.connect(
+            save_row
+        )
+        damage_spin.valueChanged.connect(
             save_row
         )
         player_x_spin.valueChanged.connect(

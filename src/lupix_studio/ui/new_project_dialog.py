@@ -48,12 +48,12 @@ class NewProjectDialog(QDialog):
         self.mode_combo = QComboBox()
 
         self.mode_combo.addItem(
-            "Blueprint",
+            "Flowchart",
             DevelopmentMode.BLUEPRINT.value,
         )
 
         self.mode_combo.addItem(
-            "Blueprint + Script",
+            "Flowchart + Script",
             DevelopmentMode.HYBRID.value,
         )
 

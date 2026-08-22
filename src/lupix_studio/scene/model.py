@@ -429,6 +429,7 @@ class Area2DAction:
     player_y: float = 0.0
     target_entity_id: str = ""
     collider_enabled: bool = True
+    damage_amount: int = 1
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -440,6 +441,7 @@ class Area2DAction:
             "player_y": self.player_y,
             "target_entity_id": self.target_entity_id,
             "collider_enabled": self.collider_enabled,
+            "damage_amount": self.damage_amount,
         }
 
     @classmethod
@@ -496,6 +498,15 @@ class Area2DAction:
                     "collider_enabled",
                     True,
                 )
+            ),
+            damage_amount=max(
+                1,
+                int(
+                    data.get(
+                        "damage_amount",
+                        1,
+                    )
+                ),
             ),
         )
 
@@ -796,6 +807,15 @@ class PlayerControllerComponent:
     gravity: float = 600.0
     max_fall_speed: float = 500.0
     air_control: float = 0.75
+    max_health: int = 3
+    respawn_delay: float = 1.0
+    death_fade_duration: float = 0.35
+    show_death_message: bool = True
+    death_message: str = "Você morreu"
+    confirm_respawn: bool = True
+    damage_stun_duration: float = 0.15
+    damage_invulnerability: float = 0.75
+    show_health_hud: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -805,6 +825,15 @@ class PlayerControllerComponent:
             "gravity": self.gravity,
             "max_fall_speed": self.max_fall_speed,
             "air_control": self.air_control,
+            "max_health": self.max_health,
+            "respawn_delay": self.respawn_delay,
+            "death_fade_duration": self.death_fade_duration,
+            "show_death_message": self.show_death_message,
+            "death_message": self.death_message,
+            "confirm_respawn": self.confirm_respawn,
+            "damage_stun_duration": self.damage_stun_duration,
+            "damage_invulnerability": self.damage_invulnerability,
+            "show_health_hud": self.show_health_hud,
         }
 
     @classmethod
@@ -867,6 +896,47 @@ class PlayerControllerComponent:
                     ),
                 ),
             ),
+            max_health=max(
+                1,
+                int(
+                    data.get(
+                        "max_health",
+                        3,
+                    )
+                ),
+            ),
+            respawn_delay=max(
+                0.0,
+                float(
+                    data.get(
+                        "respawn_delay",
+                        1.0,
+                    )
+                ),
+            ),
+            death_fade_duration=max(
+                0.05,
+                float(data.get("death_fade_duration", 0.35)),
+            ),
+            show_death_message=bool(
+                data.get("show_death_message", True)
+            ),
+            death_message=str(
+                data.get("death_message", "Você morreu")
+                or ""
+            ),
+            confirm_respawn=bool(
+                data.get("confirm_respawn", True)
+            ),
+            damage_stun_duration=max(
+                0.0, float(data.get("damage_stun_duration", 0.15))
+            ),
+            damage_invulnerability=max(
+                0.0, float(data.get("damage_invulnerability", 0.75))
+            ),
+            show_health_hud=bool(
+                data.get("show_health_hud", True)
+            ),
         )
 
 
@@ -891,8 +961,14 @@ class SceneEntity:
     collider: ColliderComponent | None = None
     area2d: Area2DComponent | None = None
     player_controller: PlayerControllerComponent | None = None
+    ui_element: dict[str, object] | None = None
+    blueprint: dict[str, object] | None = None
 
     def refresh_kind(self) -> None:
+        if self.ui_element is not None:
+            self.kind = "ui_element"
+            return
+
         if self.tilemap is not None:
             self.kind = "tilemap"
             return
@@ -961,6 +1037,12 @@ class SceneEntity:
             data["player_controller"] = (
                 self.player_controller.to_dict()
             )
+
+        if self.ui_element is not None:
+            data["ui_element"] = dict(self.ui_element)
+
+        if self.blueprint is not None:
+            data["blueprint"] = dict(self.blueprint)
 
         return data
 
@@ -1108,6 +1190,15 @@ class SceneEntity:
             collider=collider,
             area2d=area2d,
             player_controller=player_controller,
+            ui_element=(
+                dict(data.get("ui_element", {}))
+                if isinstance(data.get("ui_element"), dict)
+                else None
+            ),
+            blueprint=(
+                dict(data.get("blueprint", {}))
+                if isinstance(data.get("blueprint"), dict) else None
+            ),
         )
 
         entity.refresh_kind()
@@ -1190,6 +1281,19 @@ class SceneResource:
             if (
                 entity.player_controller is not None
                 and entity.player_controller.enabled
+            ):
+                return entity
+
+        return None
+
+    def spawn_point(
+        self,
+    ) -> SceneEntity | None:
+        """Retorna o SpawnPoint principal da cena."""
+        for entity in self.entities:
+            if (
+                entity.name.strip().lower()
+                == "spawnpoint"
             ):
                 return entity
 

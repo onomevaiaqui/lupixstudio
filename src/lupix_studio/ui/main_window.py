@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QScrollArea,
+    QSplitter,
     QStackedWidget,
     QStatusBar,
     QTabWidget,
@@ -73,6 +74,7 @@ from lupix_studio.ui.sprite_component_editor import (
 from lupix_studio.ui.tilemap_component_editor import (
     TileMapComponentEditor,
 )
+from lupix_studio.ui.ui_element_editor import UIElementEditor
 from lupix_studio.ui.workspace import WorkspaceWidget
 
 
@@ -353,9 +355,7 @@ class MainWindow(QMainWindow):
         self.workspace = WorkspaceWidget()
 
         self.lua_editor = LuaEditor()
-        self.workspace.stack.addWidget(
-            self.lua_editor
-        )
+        self.workspace.set_script_editor(self.lua_editor)
 
         self.lua_editor.back_requested.connect(
             self._on_lua_editor_back
@@ -400,6 +400,8 @@ class MainWindow(QMainWindow):
         self.workspace.animation_changed.connect(
             self._on_animation_changed
         )
+        self.workspace.flow_back_requested.connect(self._on_flow_back)
+        self.workspace.flow_changed.connect(self._on_flow_changed)
 
         self.workspace.play_stop_requested.connect(
             self._stop_play_preview
@@ -416,16 +418,20 @@ class MainWindow(QMainWindow):
 
     def _create_project_dock(self) -> None:
         self.project_dock = QDockWidget(
-            "Projeto",
+            "Projeto e Hierarquia",
             self,
         )
 
-        self.left_stack = QStackedWidget()
+        self.left_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.left_splitter.setChildrenCollapsible(False)
 
         self.project_tree = ProjectTree()
 
         self.project_tree.itemDoubleClicked.connect(
             self._on_project_item_double_clicked
+        )
+        self.project_tree.scene_delete_requested.connect(
+            self._on_scene_delete_requested
         )
 
         self.scene_tree = SceneTree()
@@ -442,16 +448,20 @@ class MainWindow(QMainWindow):
             self._on_scene_changed
         )
 
-        self.left_stack.addWidget(
+        self.left_splitter.addWidget(
             self.project_tree
         )
 
-        self.left_stack.addWidget(
+        self.left_splitter.addWidget(
             self.scene_tree
         )
 
+        self.left_splitter.setStretchFactor(0, 1)
+        self.left_splitter.setStretchFactor(1, 1)
+        self.left_splitter.setSizes([360, 360])
+
         self.project_dock.setWidget(
-            self.left_stack
+            self.left_splitter
         )
 
         self.addDockWidget(
@@ -477,6 +487,7 @@ class MainWindow(QMainWindow):
         self.collider_editor = ColliderComponentEditor()
         self.area2d_editor = Area2DComponentEditor()
         self.player_editor = PlayerControllerEditor()
+        self.ui_element_editor = UIElementEditor()
 
         self.entity_panel = EntityInspectorPanel(
             transform_editor=self.entity_inspector,
@@ -487,6 +498,7 @@ class MainWindow(QMainWindow):
             collider_editor=self.collider_editor,
             area2d_editor=self.area2d_editor,
             player_editor=self.player_editor,
+            ui_element_editor=self.ui_element_editor,
         )
 
         self.entity_scroll = QScrollArea()
@@ -541,6 +553,12 @@ class MainWindow(QMainWindow):
 
         self.player_editor.player_changed.connect(
             self._on_player_changed
+        )
+        self.ui_element_editor.element_changed.connect(
+            self._on_player_changed
+        )
+        self.ui_element_editor.center_requested.connect(
+            self._center_ui_item
         )
 
         self.inspector_stack.addWidget(
@@ -750,7 +768,10 @@ class MainWindow(QMainWindow):
 
         player = self.current_scene.player_entity()
 
-        if player is None:
+        if (
+            player is None
+            and self.current_scene.type != "interface"
+        ):
             QMessageBox.warning(
                 self,
                 "Executar",
@@ -1044,6 +1065,7 @@ class MainWindow(QMainWindow):
         self.current_project = project
         self.current_scene_path = None
         self.current_scene = None
+        self.workspace.configure_development_mode(project.development_mode)
 
         self.recent_projects.add(
             project.root
@@ -1169,6 +1191,7 @@ class MainWindow(QMainWindow):
                 name=name,
                 width=dialog.scene_width(),
                 height=dialog.scene_height(),
+                scene_type=dialog.scene_type(),
             )
 
             resource = self.scene_serializer.load(
@@ -1271,8 +1294,11 @@ class MainWindow(QMainWindow):
             resource,
         )
 
+        scene_label = (
+            "Interface" if resource.type == "interface" else "Cena"
+        )
         self.statusBar().showMessage(
-            f"Cena aberta: {resource.name}"
+            f"{scene_label} aberta: {resource.name}"
         )
 
         self.console.append(
@@ -1313,6 +1339,49 @@ class MainWindow(QMainWindow):
             path,
             resource,
         )
+
+    def _on_scene_delete_requested(self, scene_path_text: str) -> None:
+        if self.current_project is None or self.playing:
+            return
+        scene_path = Path(scene_path_text).resolve()
+        scenes_root = (self.current_project.root / "scenes").resolve()
+        try:
+            scene_path.relative_to(scenes_root)
+        except ValueError:
+            QMessageBox.warning(
+                self, "Excluir cena", "A cena está fora da pasta scenes do projeto."
+            )
+            return
+        if scene_path.suffix.lower() != ".scene" or not scene_path.is_file():
+            return
+        if (
+            self.current_scene_path is not None
+            and self.current_scene_path.resolve() == scene_path
+        ):
+            QMessageBox.information(
+                self,
+                "Excluir cena",
+                "Esta cena está aberta. Abra outra cena antes de excluí-la.",
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "Excluir cena",
+            f"Excluir permanentemente a cena '{scene_path.stem}'?\n\n"
+            "Essa ação não pode ser desfeita.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            scene_path.unlink()
+        except OSError as error:
+            QMessageBox.critical(self, "Excluir cena", str(error))
+            return
+        self.project_tree.load_project(self.current_project.root)
+        self.console.append(f"Cena excluída: {scene_path.name}")
+        self.statusBar().showMessage(f"Cena excluída: {scene_path.name}")
 
     def _on_project_item_double_clicked(
         self,
@@ -1362,9 +1431,7 @@ class MainWindow(QMainWindow):
         if not self.lua_editor.open_file(path):
             return
 
-        self.workspace.stack.setCurrentWidget(
-            self.lua_editor
-        )
+        self.workspace.show_script()
 
         self.statusBar().showMessage(
             f"Script aberto: {path.name}"
@@ -1438,22 +1505,12 @@ class MainWindow(QMainWindow):
         )
 
     def _show_project_hierarchy(self) -> None:
-        self.left_stack.setCurrentWidget(
-            self.project_tree
-        )
-
-        self.project_dock.setWindowTitle(
-            "Projeto"
-        )
+        # Projeto e Hierarquia permanecem visíveis ao mesmo tempo.
+        self.project_dock.setWindowTitle("Projeto e Hierarquia")
 
     def _show_scene_hierarchy(self) -> None:
-        self.left_stack.setCurrentWidget(
-            self.scene_tree
-        )
-
-        self.project_dock.setWindowTitle(
-            "Hierarquia"
-        )
+        # Mantido para compatibilidade com o fluxo atual de navegação.
+        self.project_dock.setWindowTitle("Projeto e Hierarquia")
 
     def _on_scene_changed(self) -> None:
         if (
@@ -1590,6 +1647,11 @@ class MainWindow(QMainWindow):
             ),
         )
 
+        self.ui_element_editor.set_context(
+            entity
+        )
+        self.workspace.set_flow_entity(entity)
+
         self.player_editor.set_context(
             entity
         )
@@ -1650,6 +1712,9 @@ class MainWindow(QMainWindow):
             ),
             "player": (
                 EntityInspectorPanel.SECTION_PLAYER
+            ),
+            "ui_element": (
+                EntityInspectorPanel.SECTION_UI_ELEMENT
             ),
         }
 
@@ -1919,6 +1984,19 @@ class MainWindow(QMainWindow):
         # O editor já alterou o modelo antes de emitir area2d_changed.
         self._save_current_scene()
 
+    def _center_ui_item(self, entity_id: str) -> None:
+        if self.current_scene is None or self.playing:
+            return
+        entity = self.current_scene.entity(entity_id)
+        if entity is None or entity.ui_element is None:
+            return
+        entity.transform.x = self.current_scene.width / 2.0
+        entity.transform.y = self.current_scene.height / 2.0
+        self.workspace.scene_viewport.update_entity(entity_id)
+        self.entity_inspector.show_entity(entity)
+        self.ui_element_editor.set_context(entity)
+        self._save_current_scene()
+
     def _on_player_changed(
         self,
         entity_id: str,
@@ -1938,7 +2016,14 @@ class MainWindow(QMainWindow):
 
         self.scene_tree.refresh()
 
+        # Posição, tamanho, conteúdo e camada aparecem imediatamente.
+        self.workspace.scene_viewport.update_entity(entity_id)
+
         self.entity_inspector.show_entity(
+            entity
+        )
+
+        self.ui_element_editor.set_context(
             entity
         )
 
@@ -1987,6 +2072,18 @@ class MainWindow(QMainWindow):
             "Animation Editor aberto: "
             f"{entity.name} > {clip_name}"
         )
+
+    def _on_flow_open(self, entity_id: str) -> None:
+        if self.current_scene is None or self.playing: return
+        entity = self.current_scene.entity(entity_id)
+        if entity is not None and entity.blueprint is not None: self.workspace.show_lupix_flow(entity)
+
+    def _on_flow_changed(self, entity_id: str) -> None:
+        self._save_current_scene()
+
+    def _on_flow_back(self) -> None:
+        if self.current_project is None or self.current_scene is None: return
+        self._save_current_scene(); self.workspace.show_scene(self.current_project.root, self.current_scene)
 
     def _on_animation_back_requested(
         self,

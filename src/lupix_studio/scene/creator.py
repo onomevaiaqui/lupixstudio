@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from lupix_studio.scene.model import SceneResource
+from lupix_studio.scene.model import SceneEntity, SceneResource
 from lupix_studio.scene.serializer import SceneSerializer
 
 
@@ -40,12 +40,16 @@ def create_scene(
     name: str,
     width: int = 480,
     height: int = 270,
+    scene_type: str = "scene",
 ) -> Path:
     """Cria uma nova cena dentro da pasta scenes."""
 
     project_root = Path(
         project_root
     ).resolve()
+
+    if scene_type not in {"scene", "interface"}:
+        raise ValueError("Tipo de cena inválido.")
 
     if width <= 0 or height <= 0:
         raise ValueError(
@@ -76,10 +80,17 @@ def create_scene(
             f"A cena '{safe_name}' já existe."
         )
 
+    entities = (
+        [SceneEntity(name="UI", kind="ui_canvas")]
+        if scene_type == "interface"
+        else []
+    )
     resource = SceneResource(
         name=name.strip(),
         width=width,
         height=height,
+        entities=entities,
+        type=scene_type,
     )
 
     serializer = SceneSerializer()

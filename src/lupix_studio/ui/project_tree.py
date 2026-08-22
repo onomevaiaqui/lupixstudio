@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QMenu,
     QStyle,
     QTreeWidget,
     QTreeWidgetItem,
@@ -13,6 +14,8 @@ from PySide6.QtWidgets import (
 
 class ProjectTree(QTreeWidget):
     """Explorador visual simplificado de um projeto Lupix."""
+
+    scene_delete_requested = Signal(str)
 
     ROLE_PATH = Qt.ItemDataRole.UserRole
 
@@ -54,6 +57,29 @@ class ProjectTree(QTreeWidget):
         self.setUniformRowHeights(
             True
         )
+
+        self.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.customContextMenuRequested.connect(
+            self._show_context_menu
+        )
+
+    def _show_context_menu(self, position) -> None:
+        item = self.itemAt(position)
+        if item is None:
+            return
+        value = item.data(0, self.ROLE_PATH)
+        if not value:
+            return
+        path = Path(str(value))
+        if not path.is_file() or path.suffix.lower() != ".scene":
+            return
+        menu = QMenu(self)
+        delete_action = menu.addAction("Excluir cena")
+        selected = menu.exec(self.viewport().mapToGlobal(position))
+        if selected is delete_action:
+            self.scene_delete_requested.emit(str(path.resolve()))
 
     def load_project(
         self,

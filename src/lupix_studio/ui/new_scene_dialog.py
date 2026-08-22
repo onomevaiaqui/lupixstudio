@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -28,6 +29,13 @@ class NewSceneDialog(QDialog):
         self.name_edit.setText("Main")
         self.name_edit.selectAll()
 
+        self.type_combo = QComboBox()
+        self.type_combo.addItem("Cena de jogo", "scene")
+        self.type_combo.addItem("Cena de interface", "interface")
+        self.type_combo.currentIndexChanged.connect(
+            self._on_type_changed
+        )
+
         self.width_spin = QSpinBox()
         self.width_spin.setRange(1, 8192)
         self.width_spin.setValue(default_width)
@@ -42,6 +50,8 @@ class NewSceneDialog(QDialog):
             "Nome:",
             self.name_edit,
         )
+
+        form.addRow("Tipo:", self.type_combo)
 
         form.addRow(
             "Largura:",
@@ -70,6 +80,15 @@ class NewSceneDialog(QDialog):
 
         layout.addLayout(form)
         layout.addWidget(self.buttons)
+
+    def _on_type_changed(self) -> None:
+        if self.scene_type() == "interface" and (
+            not self.scene_name() or self.scene_name() == "Main"
+        ):
+            self.name_edit.setText("Nova_Interface")
+
+    def scene_type(self) -> str:
+        return str(self.type_combo.currentData() or "scene")
 
     def scene_name(self) -> str:
         return self.name_edit.text().strip()

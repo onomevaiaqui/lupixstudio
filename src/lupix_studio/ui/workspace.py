@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
     QStackedWidget,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -16,6 +17,7 @@ from lupix_studio.scene.model import (
 from lupix_studio.ui.animation_editor import (
     AnimationEditor,
 )
+from lupix_studio.ui.flowchart_editor import FlowchartEditor
 from lupix_studio.ui.play_preview import PlayPreview
 from lupix_studio.ui.scene_viewport import SceneViewport
 from lupix_studio.ui.start_page import StartPage
@@ -82,6 +84,8 @@ class WorkspaceWidget(QWidget):
     )
 
     play_stop_requested = Signal()
+    flow_back_requested = Signal()
+    flow_changed = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -117,6 +121,13 @@ class WorkspaceWidget(QWidget):
         self.play_preview = (
             PlayPreview()
         )
+        self.flow_editor = FlowchartEditor()
+        self.script_editor: QWidget | None = None
+
+        self.editor_tabs = QTabWidget()
+        self.editor_tabs.setObjectName("MainEditorTabs")
+        self.editor_tabs.addTab(self.scene_viewport, "Editor")
+        self.editor_tabs.addTab(self.flow_editor, "Flowchart")
 
         # =========================================================
         # STACK
@@ -131,7 +142,7 @@ class WorkspaceWidget(QWidget):
         )
 
         self.stack.addWidget(
-            self.scene_viewport
+            self.editor_tabs
         )
 
         self.stack.addWidget(
@@ -196,8 +207,38 @@ class WorkspaceWidget(QWidget):
         self.play_preview.stop_requested.connect(
             self.play_stop_requested.emit
         )
+        self.flow_editor.back_requested.connect(self.flow_back_requested.emit)
+        self.flow_editor.flow_changed.connect(self.flow_changed.emit)
 
         self.show_start_page()
+
+    def set_script_editor(self, editor: QWidget) -> None:
+        self.script_editor = editor
+
+    def configure_development_mode(self, mode: str) -> None:
+        # Recria somente as abas centrais; os editores continuam vivos.
+        while self.editor_tabs.count():
+            self.editor_tabs.removeTab(0)
+
+        self.editor_tabs.addTab(self.scene_viewport, "Editor")
+
+        if mode in {"blueprint", "blueprint_script"}:
+            self.editor_tabs.addTab(self.flow_editor, "Flowchart")
+
+        if mode in {"script", "blueprint_script"} and self.script_editor is not None:
+            self.editor_tabs.addTab(self.script_editor, "Script")
+
+    def set_flow_entity(self, entity: SceneEntity) -> None:
+        self.flow_editor.open_flow(entity)
+
+    def show_script(self) -> None:
+        if self.script_editor is None:
+            return
+        index = self.editor_tabs.indexOf(self.script_editor)
+        if index < 0:
+            return
+        self.editor_tabs.setCurrentIndex(index)
+        self.stack.setCurrentWidget(self.editor_tabs)
 
     # =============================================================
     # START
@@ -239,10 +280,10 @@ class WorkspaceWidget(QWidget):
             project_root,
             resource,
         )
+        self.flow_editor.set_project_root(project_root)
 
-        self.stack.setCurrentWidget(
-            self.scene_viewport
-        )
+        self.editor_tabs.setCurrentWidget(self.scene_viewport)
+        self.stack.setCurrentWidget(self.editor_tabs)
 
     # =============================================================
     # TILESET
@@ -299,6 +340,14 @@ class WorkspaceWidget(QWidget):
         self.stack.setCurrentWidget(
             self.animation_editor
         )
+
+    def show_lupix_flow(self, entity: SceneEntity) -> None:
+        index = self.editor_tabs.indexOf(self.flow_editor)
+        if index < 0:
+            return
+        self.flow_editor.open_flow(entity)
+        self.editor_tabs.setCurrentIndex(index)
+        self.stack.setCurrentWidget(self.editor_tabs)
 
     # =============================================================
     # PLAY
